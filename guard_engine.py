@@ -516,10 +516,15 @@ def solve_batch(payload):
     single_violations = sum(max(0, count - 1) for count in singles_per_teacher) if not relax_single else 0
     subject_matches = sum(1 for i, t in enumerate(assignment_idx)
                           if not roles_reserve[i] and subject_ids[t] and subject_ids[t] in task_subjects[i])
+    # Determine the proof status before using it in the diagnosis.
+    # Previously this assignment came after `if not proven_optimal`, causing
+    # UnboundLocalError on every successful solve that reached this block.
+    proven_optimal = (final_status == cp_model.OPTIMAL) or (
+        final_status == cp_model.INFEASIBLE and best_assignment is not None
+    )
     diagnosis = ["تم العثور على توزيع كامل يحقق القيود الصلبة المفعّلة."]
     if not proven_optimal:
         diagnosis.append("الحل صالح، لكن لم يثبت المحرك أنه الحل الأمثل قبل انتهاء زمن البحث.")
-    proven_optimal = (final_status == cp_model.OPTIMAL) or (final_status == cp_model.INFEASIBLE and best_assignment is not None)
     best = {
         "assignments": assignment_ids,
         "unfilled": [],
