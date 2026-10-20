@@ -77,6 +77,23 @@ def write_stamp(ms):
     try:STAMP.write_text(str(ms),encoding='utf-8')
     except Exception:pass
 
+def backup_database(c):
+    """Keep one consistent SQLite backup per day before the first write."""
+    try:
+        folder=APP/'backups'; folder.mkdir(parents=True,exist_ok=True)
+        target=folder/f"guard-{datetime.now().strftime('%Y-%m-%d')}.sqlite"
+        if not target.exists():
+            dst=sqlite3.connect(str(target))
+            try:c.backup(dst)
+            finally:dst.close()
+        backups=sorted(folder.glob('guard-*.sqlite'),key=lambda p:p.stat().st_mtime,reverse=True)
+        for old in backups[14:]:
+            try:old.unlink()
+            except OSError:pass
+    except Exception:
+        # A backup failure must not silently cancel a normal save.
+        pass
+
 def cmpver(a,b):
     def parts(v):return [int(x) for x in (str(v).split('.')+['0','0','0'])[:3]]
     return (parts(a)>parts(b))-(parts(a)<parts(b))
@@ -213,7 +230,7 @@ class Handler(BaseHTTPRequestHandler):
         p=urlparse(self.path).path; body=self.body(); c=store.connect(DBFILE)
         try:
             if p=='/api/save':
-                try:d=json.loads(body) if isinstance(body,str) else body; store.save_all(c,d); self.reply({'value':True})
+                try:d=json.loads(body) if isinstance(body,str) else body; backup_database(c); store.save_all(c,d); self.reply({'value':True})
                 except Exception as e:self.reply({'error':'تعذر حفظ البيانات: '+str(e)},500)
             elif p=='/api/kvset':
                 if body.get('k')=='exam_local_user':store.set_user(c,str(body.get('v') or 'admin'))

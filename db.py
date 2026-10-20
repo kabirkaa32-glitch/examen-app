@@ -30,7 +30,7 @@ def load_all(c):
  'invigilations':[{'id':x['id'],'date':x['date'],'period':x['period'],'time':x['time'],'teacherId':e(x['teacher_id']),'roomId':e(x['room_id']),'status':x['status'],'justified':x['justified'],'note':x['note'],'sessionId':e(x['session_id']),'seat':x['seat'],'mandatory':bool(x['mandatory'])} for x in allrows('SELECT * FROM invigilations')],
  'teacherGuardAbsences':[{'id':x['id'],'sessionId':e(x['session_id']),'date':x['date'],'period':x['period'],'time':x['time'],'teacherId':e(x['teacher_id']),'justified':x['justified'],'note':x['note']} for x in allrows('SELECT * FROM teacher_guard_absences')],
  'doubleRoomRules':[{'id':x['id'],'sessionId':x['session_id'],'roomIds':dr.get(str(x['id']),[]),'count':x['count']} for x in allrows('SELECT * FROM double_room_rules')],
- 'exclusionRules':[{'id':x['id'],'teacherId':x['teacher_id'],'date':x['date'],'start':x['start'],'end':x['end']} for x in allrows('SELECT * FROM exclusion_rules')]}
+ 'exclusionRules':[{'id':x['id'],'teacherId':x['teacher_id'],'date':x['date'] or '', 'start':x['start'] or '', 'end':x['end'] or '', 'allGuard':not bool(x['date'])} for x in allrows('SELECT * FROM exclusion_rules')]}
 def save_all(c,d):
  def insert(sql, rows): c.executemany(sql,rows)
  def n(v): return None if v is None or v=='' else v
@@ -56,7 +56,7 @@ def save_all(c,d):
   insert('INSERT OR REPLACE INTO teacher_guard_absences VALUES (?,?,?,?,?,?,?,?)',[(x['id'],n(x.get('sessionId')),n(x.get('date')),x.get('period',''),x.get('time',''),n(x.get('teacherId')),x.get('justified',''),x.get('note','')) for x in d.get('teacherGuardAbsences',[])])
   for x in d.get('doubleRoomRules',[]):
    c.execute('INSERT OR REPLACE INTO double_room_rules VALUES (?,?,?)',(x['id'],x.get('sessionId'),x.get('count',1))); insert('INSERT OR IGNORE INTO double_room_rule_rooms VALUES (?,?)',[(x['id'],i) for i in x.get('roomIds',[])])
-  insert('INSERT OR REPLACE INTO exclusion_rules VALUES (?,?,?,?,?)',[(x['id'],x.get('teacherId'),n(x.get('date')),n(x.get('start')),n(x.get('end'))) for x in d.get('exclusionRules',[])])
+  insert('INSERT OR REPLACE INTO exclusion_rules VALUES (?,?,?,?,?)',[(x['id'],x.get('teacherId'),None if x.get('allGuard') else n(x.get('date')),None if x.get('allGuard') else n(x.get('start')),None if x.get('allGuard') else n(x.get('end'))) for x in d.get('exclusionRules',[])])
 def get_user(c): return c.execute('SELECT username FROM app_user WHERE id=1').fetchone()['username'] or 'admin'
 def set_user(c,name): c.execute('UPDATE app_user SET username=? WHERE id=1',(name,)); c.commit()
 def set_password(c,pw):

@@ -2,6 +2,9 @@
 # Build:  python tools/fetch_assets.py && python tools/pack_renderer.py && pyinstaller --noconfirm --clean guard_app.spec
 # Debug build with a console window:  set GUARD_CONSOLE=1  (then build)
 import os
+from PyInstaller.utils.hooks import collect_all
+
+ortools_datas, ortools_binaries, ortools_hiddenimports = collect_all("ortools")
 
 APP_NAME = "GuardApp"
 ROOT_DIR = os.path.abspath(SPECPATH)
@@ -13,14 +16,14 @@ if not os.path.exists(os.path.join(ROOT_DIR, "_renderer_pack.py")):
 if not os.path.exists(ICON):
     raise SystemExit("assets/icon.ico is missing - the EXE would get the default icon")
 
-datas = [("schema.sql", "."), ("assets/icon.png", "assets"), ("assets/icon.ico", "assets")]
+datas = [("schema.sql", "."), ("assets/icon.png", "assets"), ("assets/icon.ico", "assets")] + ortools_datas
 if os.path.isdir(os.path.join(ROOT_DIR, "fonts")):
     datas.append(("fonts", "fonts"))          # خطوط الطباعة (تُحمَّل أثناء البناء)
 
 a = Analysis(
     ["app.py"],
     pathex=[ROOT_DIR],
-    binaries=[],
+    binaries=ortools_binaries,
     datas=datas,                               # renderer is embedded via _renderer_pack.py
     hiddenimports=[
         "PySide6.QtWebEngineCore",
@@ -29,7 +32,7 @@ a = Analysis(
         "PySide6.QtNetwork",
         "PySide6.QtPrintSupport",
         "_renderer_pack",
-    ],
+    ] + ortools_hiddenimports,
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter"],
