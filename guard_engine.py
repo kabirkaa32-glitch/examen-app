@@ -483,7 +483,9 @@ def solve_batch(payload):
                 f"قيد فارق الساعات المطبق: {hour_spread_limit // 60} ساعة كحد أقصى." if balance_hours_on else "قيد توازن الساعات غير مفعّل.",
             ],
             "solverStatus": status_name, "runs": runs,
-            "attempts": total_branches, "iterations": total_conflicts,
+            # Attempts means actual CP-SAT solve invocations, not branch count.
+            # Branches may legitimately be zero when presolve proves infeasibility.
+            "attempts": runs, "branches": total_branches, "iterations": total_conflicts,
             "timedOut": status_name == "UNKNOWN", "elapsed": elapsed,
         }
 
@@ -516,12 +518,7 @@ def solve_batch(payload):
     single_violations = sum(max(0, count - 1) for count in singles_per_teacher) if not relax_single else 0
     subject_matches = sum(1 for i, t in enumerate(assignment_idx)
                           if not roles_reserve[i] and subject_ids[t] and subject_ids[t] in task_subjects[i])
-    # Determine the proof status before using it in the diagnosis.
-    # Previously this assignment came after `if not proven_optimal`, causing
-    # UnboundLocalError on every successful solve that reached this block.
-    proven_optimal = (final_status == cp_model.OPTIMAL) or (
-        final_status == cp_model.INFEASIBLE and best_assignment is not None
-    )
+    proven_optimal = (final_status == cp_model.OPTIMAL)
     diagnosis = ["تم العثور على توزيع كامل يحقق القيود الصلبة المفعّلة."]
     if not proven_optimal:
         diagnosis.append("الحل صالح، لكن لم يثبت المحرك أنه الحل الأمثل قبل انتهاء زمن البحث.")
@@ -529,7 +526,8 @@ def solve_batch(payload):
         "assignments": assignment_ids,
         "unfilled": [],
         "score": int(max(0, minute_spread_value)),
-        "attempts": total_branches,
+        "attempts": runs,
+        "branches": total_branches,
         "iterations": total_conflicts,
         "engine": "OR-Tools CP-SAT (strict multi-start)",
         "perfect": True,
@@ -554,7 +552,7 @@ def solve_batch(payload):
         "strictBalance": True,
         "elapsed": elapsed,
     }
-    return {"ok": True, "best": best, "attempts": total_branches,
+    return {"ok": True, "best": best, "attempts": runs, "branches": total_branches,
             "iterations": total_conflicts, "timedOut": not proven_optimal,
             "elapsed": elapsed}
 
