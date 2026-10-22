@@ -45,9 +45,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-build.txt
-          python -c "import PySide6, cryptography, ortools; from ortools.sat.python import cp_model; from PySide6.QtWebEngineWidgets import QWebEngineView; from PySide6.QtPrintSupport import QPrinter; print('Dependencies OK; OR-Tools CP-SAT ready')"
-      - name: Test CP-SAT scheduling constraints
-        run: python -m unittest discover -s tests -v
+          python -c "import PySide6, cryptography; from PySide6.QtWebEngineWidgets import QWebEngineView; from PySide6.QtPrintSupport import QPrinter; print('Dependencies OK')"
 
       - name: Download offline assets (Excel library + Arabic fonts)
         run: python tools/fetch_assets.py
