@@ -6,7 +6,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote
 import sqlite3
 import db as store
-import guard_engine
 ROOT=Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
 PORT=18764
 PUBLIC_KEY='''-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA8T+IZCm2CGEPhhxms3xorBOZh2J1fWeZBRC/5modGYc=\n-----END PUBLIC KEY-----'''
@@ -245,9 +244,6 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute("UPDATE license SET device_id=?,code=?,activated=1,activation_code=?,activated_at=datetime('now') WHERE id=1",(device_id(),code,code));c.commit();self.reply({'ok':True,**lic_status(c)})
                 else:self.reply({'ok':False,'error':st.get('error','انتهت صلاحية هذا الكود')})
             elif p=='/api/install_update':self.reply(install_update(str(body.get('text',''))))
-            elif p=='/api/guard-solve':
-                try:self.reply(guard_engine.solve_batch(body))
-                except Exception as e:self.reply({'ok':False,'error':'خطأ في محرك التوليد Python: '+str(e)},500)
             elif p=='/api/print':
                 o='landscape' if body.get('orientation')=='landscape' else 'portrait'
                 if PRINT_HOOK:PRINT_HOOK(o); self.reply({'ok':True})
