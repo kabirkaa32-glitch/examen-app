@@ -1250,7 +1250,7 @@ footer{color:var(--u-muted)!important}
 <div class="grid two"><div><label>الفوج</label><select id="studentGroup"></select></div><div><label>ملف Excel أو CSV</label><input type="file" id="studentCsv" accept=".csv,.txt,.xls,.xlsx"></div></div>
 <div style="margin-top:8px"><label>طريقة الاستيراد</label><select id="studentImportMode"><option value="add">إضافة إلى القائمة الحالية (تجاوز المكرر)</option><option value="replace">استبدال القائمة الحالية بالكامل</option></select></div><div class="actions"><button onclick="importStudentsCsv()">إستيراد</button><button class="secondary" onclick="downloadTemplate('students')">نموذج</button></div><div id="studentImportReport"></div>
 <hr><h3>إضافة تلميذ يدوياً</h3>
-<div class="grid"><div><label>رقم التعريف</label><input id="sId"></div><div><label>اللقب</label><input id="sLast"></div><div><label>الاسم</label><input id="sFirst"></div><div><label>الجنس</label><select id="sGender"><option value="">غير محدد</option><option value="ذكر">ذكر</option><option value="أنثى">أنثى</option></select></div><div><label>الفوج</label><select id="sGroup"></select></div></div>
+<div class="grid"><div><label>رقم التعريف</label><input id="sId"></div><div><label>اللقب</label><input id="sLast"></div><div><label>الاسم</label><input id="sFirst"></div><div><label>تاريخ الميلاد</label><input id="sBirth" placeholder="jj/mm/aaaa" style="direction:ltr;text-align:right"></div><div><label>الجنس</label><select id="sGender"><option value="">غير محدد</option><option value="ذكر">ذكر</option><option value="أنثى">أنثى</option></select></div><div><label>الفوج</label><select id="sGroup"></select></div></div>
 <div class="actions"><button onclick="addStudent()">إضافة</button></div>
 <div id="studentStats" class="notice info no-print" style="margin:8px 0"></div><div id="studentsTable" class="table-wrap"></div></div>
 <div class="card"><h2>الأساتذة والمواد</h2>
@@ -1320,6 +1320,15 @@ footer{color:var(--u-muted)!important}
 <div><label>الجنس</label><select id="assignGender" onchange="updateAssignmentCountHint()"><option value="">الكل (ذكور وإناث)</option><option value="ذكر">ذكور فقط</option><option value="أنثى">إناث فقط</option></select></div>
 <div><label>نمط التوزيع التلقائي</label><select id="autoMode"><option value="normal">عادي</option><option value="gender">فصل الذكور عن الإناث (قاعات منفصلة)</option></select></div>
 <div><label>العدد المحجوز مسبقًا</label><input id="assignCount" type="number" min="0" value="0" readonly></div>
+<div style="grid-column:1/-1;border:1px dashed var(--border,#bbb);border-radius:8px;padding:8px 10px">
+<label style="display:flex;flex-direction:row;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="multiRoomOn" onchange="toggleMultiRoom()" style="appearance:auto;-webkit-appearance:checkbox;width:18px!important;height:18px!important;min-width:18px;max-width:18px;margin:0;padding:0"><span>إضافة فوج أو فوجين آخرين إلى نفس القاعة (يمتحنون في أوقات مختلفة)</span></label>
+<div class="muted" style="margin-top:4px">عند التفعيل لا تُجمع أعداد الأفواج في سعة القاعة؛ يُمنع فقط تجاوز السعة بين الأفواج التي تتقاطع حصصها (إن كانت محجوزة) أو عند تجاوز الفوج الواحد للسعة.</div>
+<div id="multiRoomBox" class="grid hidden" style="margin-top:8px">
+<div><label>الفوج الإضافي 1</label><select id="assignGroup2" onchange="fillSubSelectFor('assignGroup2','subGroup2')"></select></div>
+<div><label>الفوج الفرعي</label><select id="subGroup2"></select></div>
+<div><label>الفوج الإضافي 2</label><select id="assignGroup3" onchange="fillSubSelectFor('assignGroup3','subGroup3')"></select></div>
+<div><label>الفوج الفرعي</label><select id="subGroup3"></select></div>
+</div></div>
 <div class="muted" id="assignCountHint" style="grid-column:1/-1">اختر الفوج التربوي والفوج الفرعي؛ سيظهر العدد المحفوظ تلقائيًا.</div>
 </div><div class="actions"><button onclick="addAssignment()">إضافة</button><button class="secondary" onclick="autoDistribute()">توزيع تلقائي</button></div>
 <div id="assignmentsTable" class="table-wrap"></div>
@@ -1607,7 +1616,7 @@ function updateGroupDropdowns(changed){
 function toggleOtherBranch(){const other=document.getElementById('gBranchOther');if(other)other.classList.toggle('hidden',val('gBranch')!=='__other__');}
 function initGroupDropdowns(){updateGroupDropdowns('level');}
 function addGroup(){let level=val('gLevel'),branch=val('gBranch');if(branch==='__other__')branch=val('gBranchOther').trim();let number=val('gNumber');const mid=getPhase()==='middle';if(mid)branch='';if(!level||(!branch&&!mid))return alert('اختر المستوى والشعبة');if(db.groups.some(g=>g.level===level&&g.branch===branch&&g.number===number))return alert('موجود');db.groups.push({id:uid(),level,branch,number});document.getElementById('gLevel').selectedIndex=0;updateGroupDropdowns('level');save()}
-function addStudent(){let last=val('sLast'),first=val('sFirst'),groupId=val('sGroup');if(!last||!first||!groupId)return alert('أكمل');db.students.push({id:uid(),studentNo:val('sId'),last,first,gender:val('sGender'),groupId,subgroup:''});['sId','sLast','sFirst'].forEach(x=>document.getElementById(x).value='');save()}
+function addStudent(){let last=val('sLast'),first=val('sFirst'),groupId=val('sGroup');if(!last||!first||!groupId)return alert('أكمل');db.students.push({id:uid(),studentNo:val('sId'),last,first,gender:val('sGender'),birthDate:fmtBirth(val('sBirth')),groupId,subgroup:''});['sId','sLast','sFirst','sBirth'].forEach(x=>document.getElementById(x).value='');save()}
 function addSubject(){let name=val('subjectName');if(!name)return alert('أدخل المادة');if(db.subjects.some(s=>s.name.toLowerCase()===name.toLowerCase()))return alert('موجودة');db.subjects.push({id:uid(),name});document.getElementById('subjectName').value='';save()}
 function addTeacher(){let last=val('tLast'),first=val('tFirst');if(!last||!first)return alert('أكمل');db.teachers.push({id:uid(),last,first,subjectId:val('tSubject')});['tLast','tFirst'].forEach(x=>document.getElementById(x).value='');save()}
 function toggleOtherRoomType(){const e=document.getElementById('roomTypeOther');if(e)e.classList.toggle('hidden',val('roomType')!=='أخرى')}
@@ -1652,6 +1661,7 @@ function refreshAssignmentSubgroups(){
  else sel.innerHTML=assigned.map(v=>`<option value="${esc(v)}">${esc(subgroupLabel(v))}</option>`).join('');
  if(previous&&[...sel.options].some(o=>o.value===previous))sel.value=previous;else if(sel.options.length)sel.selectedIndex=0;
  updateAssignmentCountHint();
+ refreshExtraSubgroups();
 }
 function assignmentSubgroupDisplay(a){
  if(a.merged)return subgroupLabel(a.sub);
@@ -1671,41 +1681,110 @@ function assignmentStudentIds(a){
  if(sub&&sub!=='كامل'&&sub!=='مدمج')students=students.filter(st=>String(st.subgroup||'')===sub);
  return students.slice(0,Number(a.count)||students.length).map(st=>st.id);
 }
-function addAssignment(){
- const groupId=val('assignGroup'),roomId=val('assignRoom'),sub=val('subGroup'),gen=val('assignGender');
- if(!groupId||!roomId)return alert('اختر الفوج التربوي والقاعة');
- const base=db.students.filter(s=>String(s.groupId)===String(groupId)&&((sub==='كامل')||String(s.subgroup||'')===String(sub))&&(!gen||s.gender===gen));
- if(!base.length)return alert(gen?'لا يوجد تلاميذ من هذا الجنس في هذا الفوج/الفوج الفرعي. راجع الجنس في قائمة التلاميذ.':'لا يوجد تلاميذ محفوظون لهذا الفوج الفرعي. راجع توزيع الأفواج الفرعية ثم احفظه.');
- const taken=new Set();db.assignments.forEach(a=>assignmentStudentIds(a).forEach(id=>taken.add(id)));
- const eligible=base.filter(s=>!taken.has(s.id));
- if(!eligible.length)return alert('هذا الاختيار (فوج/فوج فرعي/جنس) محجوز مسبقًا. احذف الحجز السابق أولًا إذا أردت تغييره.');
- const count=eligible.length;
- const room=getRoom(roomId);if(!room)return alert('القاعة المحددة غير موجودة');
- const used=db.assignments.filter(a=>String(a.roomId)===String(roomId)).reduce((n,a)=>n+Number(a.count||0),0);
- if(used+count>Number(room.capacity))return alert(`لا يمكن الحجز: سعة القاعة ${room.capacity} تلميذًا، والمحجوز فيها ${used}، والعدد المطلوب ${count}. اختر قاعة أخرى أو راجع التوزيع.`);
- db.assignments.push({id:uid(),groupId,roomId,sub:sub||'كامل',gender:gen||'',count,studentIds:eligible.map(s=>s.id),manual:true});
- save();refreshAssignmentSubgroups();toast(`تم حجز ${count} تلميذًا في ${roomLabel(roomId)}`+(gen?` (${gen==='ذكر'?'ذكور':'إناث'})`:''));
+function fillSubSelectFor(groupSelId,subSelId){
+ const gid=val(groupSelId),sel=document.getElementById(subSelId);if(!sel)return;
+ const students=db.students.filter(s=>String(s.groupId)===String(gid));
+ const assigned=[...new Set(students.map(s=>String(s.subgroup||'').trim()).filter(v=>v&&v!=='كامل'&&v!=='0'))].sort((a,b)=>Number(a)-Number(b));
+ const previous=sel.value;
+ if(!assigned.length)sel.innerHTML='<option value="كامل">كامل الفوج</option>';
+ else sel.innerHTML=assigned.map(v=>`<option value="${esc(v)}">${esc(subgroupLabel(v))}</option>`).join('');
+ if(previous&&[...sel.options].some(o=>o.value===previous))sel.value=previous;else if(sel.options.length)sel.selectedIndex=0;
 }
-function autoDistributeByGender(){
+function refreshExtraSubgroups(){fillSubSelectFor('assignGroup2','subGroup2');fillSubSelectFor('assignGroup3','subGroup3')}
+function toggleMultiRoom(){
+ const on=!!document.getElementById('multiRoomOn')?.checked,b=document.getElementById('multiRoomBox');
+ if(b)b.classList.toggle('hidden',!on);
+ if(on)refreshExtraSubgroups();
+}
+function assignmentGroupIds(a){return a.merged?(a.groupIds||[a.groupId]):[a.groupId]}
+function groupSessionList(gids){
+ const ids=new Set(db.examBookings.filter(b=>gids.some(g=>String(g)===String(b.groupId))).map(b=>String(b.sessionId)));
+ return db.examSessions.filter(se=>ids.has(String(se.id)));
+}
+function sessionsOverlap(A,B){
+ return A.some(x=>B.some(y=>String(x.id)===String(y.id)||(x.date&&x.date===y.date&&x.start&&y.start&&x.end&&y.end&&x.start<y.end&&y.start<x.end)));
+}
+function addAssignment(){
+ const roomId=val('assignRoom'),gen=val('assignGender');
+ const multi=!!document.getElementById('multiRoomOn')?.checked;
+ const entries=[{groupId:val('assignGroup'),sub:val('subGroup')||'كامل'}];
+ if(multi)[['assignGroup2','subGroup2'],['assignGroup3','subGroup3']].forEach(([g,sg])=>{if(val(g))entries.push({groupId:val(g),sub:val(sg)||'كامل'})});
+ if(!entries[0].groupId||!roomId)return alert('اختر الفوج التربوي والقاعة');
+ const room=getRoom(roomId);if(!room)return alert('القاعة المحددة غير موجودة');
+ const cap=Number(room.capacity);
+ const taken=new Set();db.assignments.forEach(a=>assignmentStudentIds(a).forEach(id=>taken.add(id)));
+ const lbl=e=>{const g=getGroup(e.groupId);return (g?groupLabel(g):'الفوج')+(e.sub&&e.sub!=='كامل'?' - '+subgroupLabel(e.sub):'')};
+ for(const e of entries){
+  const base=db.students.filter(s=>String(s.groupId)===String(e.groupId)&&((e.sub==='كامل')||String(s.subgroup||'')===String(e.sub))&&(!gen||s.gender===gen));
+  if(!base.length)return alert((entries.length>1?lbl(e)+': ':'')+(gen?'لا يوجد تلاميذ من هذا الجنس في هذا الفوج/الفوج الفرعي. راجع الجنس في قائمة التلاميذ.':'لا يوجد تلاميذ محفوظون لهذا الفوج الفرعي. راجع توزيع الأفواج الفرعية ثم احفظه.'));
+  const eligible=base.filter(s=>!taken.has(s.id));
+  if(!eligible.length)return alert((entries.length>1?lbl(e)+': ':'')+'هذا الاختيار (فوج/فوج فرعي/جنس) محجوز مسبقًا. احذف الحجز السابق أولًا إذا أردت تغييره.');
+  eligible.forEach(s=>taken.add(s.id));
+  e.eligible=eligible;e.count=eligible.length;
+ }
+ {
+  const placed=db.assignments.filter(a=>String(a.roomId)===String(roomId)).map(a=>({gids:assignmentGroupIds(a),count:Number(a.count||0),label:assignGroupLabel(a)}));
+  let noBooking=false;
+  for(const e of entries){
+   const mine=groupSessionList([e.groupId]);
+   if(!mine.length)noBooking=true;
+   if(e.count>cap)return alert(`${lbl(e)}: عدد التلاميذ (${e.count}) يفوق سعة القاعة (${cap}).`);
+   let known=0,unknown=0;const names=[];
+   for(const pl of placed){
+    const ps=groupSessionList(pl.gids);
+    if(mine.length&&ps.length){if(sessionsOverlap(mine,ps)){known+=pl.count;names.push(pl.label)}}
+    else unknown+=pl.count;
+   }
+   if(known+e.count>cap)return alert(`${lbl(e)}: يمتحن في نفس وقت ${names.join('، ')} داخل هذه القاعة (${known} تلميذًا) والسعة ${cap}، والعدد المطلوب ${e.count}. غيّر القاعة أو وقت الحجز.`);
+   if(!multi&&unknown&&known+unknown+e.count>cap){
+    if(!confirm(`${lbl(e)}: سعة القاعة ${cap} والمحجوز فيها ${known+unknown} والمطلوب ${e.count}.\nلم تُحجز حصص لبعض هذه الأفواج بعد، فلا يمكن التأكد من اختلاف أوقاتها.\nهل تمتحن في أوقات مختلفة (تناوب)؟ «موافق» للقبول، «إلغاء» لاختيار قاعة أخرى.`))return;
+   }
+   placed.push({gids:[e.groupId],count:e.count,label:lbl(e)});
+  }
+  entries.noBooking=noBooking;
+ }
+ let total=0;
+ entries.forEach(e=>{db.assignments.push({id:uid(),groupId:e.groupId,roomId,sub:e.sub,gender:gen||'',count:e.count,studentIds:e.eligible.map(s=>s.id),manual:true,sharedRoom:multi||undefined});total+=e.count});
+ save();refreshAssignmentSubgroups();
+ toast(`تم حجز ${total} تلميذًا في ${roomLabel(roomId)}`+(entries.length>1?` (${entries.length} أفواج)`:'')+(gen?` (${gen==='ذكر'?'ذكور':'إناث'})`:'')+(multi&&entries.noBooking?' — تنبيه: لم تُحجز حصة لأحد الأفواج بعد، تأكد من اختلاف أوقاتها':''));
+}
+function autoDistributeByGender(){return autoDistributeCore(true)}
+function autoDistribute(){return autoDistributeCore(val('autoMode')==='gender')}
+function autoDistributeCore(byGender){
  if(!db.groups.length||!db.rooms.length||!db.students.length)return alert('أضف البيانات');
- if(!db.students.some(s=>s.gender))return alert('لم يُحدَّد جنس أي تلميذ. أضف الجنس أولًا.');
- if(!confirm('استبدال التوزيعات بتوزيع يفصل الذكور عن الإناث في قاعات مختلفة؟'))return;
- db.assignments=[];const rooms=[...db.rooms];const remaining=rooms.map(r=>Number(r.capacity)||0);const lock=rooms.map(()=>null);let ri=0,left=0;
+ if(byGender&&!db.students.some(s=>s.gender))return alert('لم يُحدَّد جنس أي تلميذ. أضف الجنس أولًا.');
+ if(!confirm(byGender?'استبدال التوزيعات بتوزيع يفصل الذكور عن الإناث في قاعات مختلفة؟':'استبدال التوزيعات؟'))return;
+ const rooms=[...db.rooms],caps=rooms.map(r=>Number(r.capacity)||0),placed=rooms.map(()=>[]);
+ const sess={};const sOf=gid=>sess[gid]||(sess[gid]=groupSessionList([gid]));
+ // تزامن فوجين: نفس الفوج دائمًا متزامن؛ فوجان بحصص معروفة يتزامنان عند تقاطعها؛ وعند غياب الحجز يُعدّان متزامنين إلا في طور التناوب
+ const conc=(j,gid,rot)=>placed[j].filter(p=>{if(String(p.gid)===String(gid))return true;const A=sOf(gid),B=sOf(p.gid);if(A.length&&B.length)return sessionsOverlap(A,B);return !rot});
+ db.assignments=[];let ri=0,left=0,rotated=0;
  for(const g of db.groups){
-  for(const gen of ['ذكر','أنثى','']){
-   const ss=db.students.filter(s=>s.groupId===g.id&&(s.gender||'')===gen);let pos=0;
+  for(const gen of (byGender?['ذكر','أنثى','']:[null])){
+   const ss=db.students.filter(s=>s.groupId===g.id&&(gen===null||(s.gender||'')===gen));let pos=0;
    while(pos<ss.length){
-    let j=-1;for(let k=0;k<rooms.length;k++){const x=(ri+k)%rooms.length;if(remaining[x]>0&&(!gen||!lock[x]||lock[x]===gen)){j=x;break}}
+    let j=-1,free=0,usedRot=false;
+    for(const [rot,full] of [[false,true],[true,true],[false,false],[true,false]]){
+     for(let k=0;k<rooms.length;k++){
+      const x=(ri+k)%rooms.length,cc=conc(x,g.id,rot);
+      const f=caps[x]-cc.reduce((n,p)=>n+p.count,0);
+      const okG=!gen||cc.every(p=>!p.gen||p.gen===gen);
+      if(f>0&&okG&&(!full||f>=ss.length-pos)){j=x;free=f;usedRot=rot;break}
+     }
+     if(j>=0)break;
+    }
     if(j<0){left+=ss.length-pos;break}
-    const count=Math.min(remaining[j],ss.length-pos);
-    db.assignments.push({id:uid(),groupId:g.id,roomId:rooms[j].id,sub:'كامل',gender:gen,count,studentIds:ss.slice(pos,pos+count).map(s=>s.id),manual:false});
-    remaining[j]-=count;if(gen)lock[j]=gen;pos+=count;ri=(j+1)%rooms.length;
+    const count=Math.min(free,ss.length-pos);
+    db.assignments.push({id:uid(),groupId:g.id,roomId:rooms[j].id,sub:'كامل',gender:gen||'',count,studentIds:ss.slice(pos,pos+count).map(s=>s.id),manual:false,sharedRoom:usedRot||undefined});
+    placed[j].push({gid:g.id,count,gen:gen||''});
+    if(usedRot)rotated++;
+    pos+=count;ri=(j+1)%rooms.length;
    }
   }
  }
- save();toast(left?`تم التوزيع، وبقي ${left} تلميذًا دون قاعة (السعة غير كافية)`:'اكتمل التوزيع التلقائي مع فصل الجنسين');
+ save();
+ toast((left?`تم التوزيع، وبقي ${left} تلميذًا دون قاعة (السعة غير كافية حتى مع التناوب)`:(byGender?'اكتمل التوزيع التلقائي مع فصل الجنسين':'اكتمل التوزيع التلقائي'))+(rotated?` — استُعمل التناوب في ${rotated} توزيعًا (قاعات أقل من الأفواج): احجز لهذه الأفواج حصصًا بأوقات مختلفة`:''));
 }
-function autoDistribute(){if(val('autoMode')==='gender')return autoDistributeByGender();if(!db.groups.length||!db.rooms.length||!db.students.length)return alert('أضف البيانات');if(!confirm('استبدال التوزيعات؟'))return;db.assignments=[];let rooms=[...db.rooms];let remaining=rooms.map(r=>r.capacity);let ri=0;for(const g of db.groups){let ss=db.students.filter(s=>s.groupId===g.id);let pos=0;while(pos<ss.length){let a=0;while(a<rooms.length&&remaining[ri%rooms.length]<=0){ri++;a++}if(a>=rooms.length)break;let room=rooms[ri%rooms.length];let count=Math.min(remaining[ri%rooms.length],ss.length-pos);db.assignments.push({id:uid(),groupId:g.id,roomId:room.id,sub:'كامل',count,studentIds:ss.slice(pos,pos+count).map(s=>s.id),manual:false});remaining[ri%rooms.length]-=count;pos+=count;ri=(ri+1)%rooms.length}}save();toast('اكتمل التوزيع التلقائي')}
 function addStudentAbsence(){const sessionId=val('absSession'),groupId=val('absGroup'),studentId=val('absStudent');if(!sessionId||!groupId||!studentId)return alert('أكمل');const se=db.examSessions.find(x=>x.id===sessionId);if(!se)return alert('الحصة غير صحيحة');const bk=db.examBookings.find(b=>b.sessionId===sessionId&&b.groupId===groupId);const subjectId=bk?bk.subjectId:'';db.absences.push({id:uid(),date:se.date,time:`${se.start} - ${se.end}`,subjectId,groupId,studentId,justified:val('absJustified'),reason:val('absReason'),sessionId});document.getElementById('absReason').value='';save()}
 function delItem(type,id){if(!confirm('هل تريد حذف هذا السجل؟'))return;const deleted=(db[type]||[]).find(x=>String(x.id)===String(id));db[type]=db[type].filter(x=>String(x.id)!==String(id));if(type==='teacherGuardAbsences'&&deleted){const rec=(db.answerPaperDeliveries||[]).find(x=>x.sessionId===deleted.sessionId);const row=rec?.guardRows?.find(x=>x.invigilationId===deleted.invigilationId||(x.teacherId===deleted.teacherId));if(row)row.status='حاضر';(db.guardMonitorRecords||[]).forEach(rc=>(rc.rows||[]).forEach(r=>{if(r.status==='غائب'&&(r.absenceId===deleted.id||(rc.sessionId===deleted.sessionId&&r.invigilationId&&r.invigilationId===deleted.invigilationId))){r.status='حاضر';r.replacementTeacherId='';r.replacementName='';r.absenceId=''}}));const receipt=(db.answerPaperReceipts||[]).find(x=>x.sessionId===deleted.sessionId);(receipt?.rows||[]).forEach(r=>{if(r.originalId===deleted.invigilationId||r.teacherId===deleted.teacherId)r.status='حاضر'});}save()}
 function toggleBulkSelection(type,checked){document.querySelectorAll(`.bulk-check[data-type=\"${type}\"]`).forEach(c=>c.checked=checked)}
@@ -2135,10 +2214,10 @@ let go=db.groups.map(g=>({value:g.id,label:groupLabel(g)})),ro=db.rooms.map(r=>(
 
  fillSubgroupSelect(document.getElementById('customTarget'),false);
  if(document.getElementById('activationStatus'))document.getElementById('activationStatus').value=licStatusText();
-['studentGroup','sGroup','assignGroup','absGroup','subAssignGroup'].forEach(id=>setOptions(id,go,'اختر الفوج'));['assignRoom'].forEach(id=>setOptions(id,ro,'اختر القاعة'));setIf('subgroupCountInput',getSubgroupCount());renderSubgroupStudents();refreshAssignmentSubgroups();setOptions('tSubject',su,'اختر المادة');
+['studentGroup','sGroup','assignGroup','absGroup','subAssignGroup'].forEach(id=>setOptions(id,go,'اختر الفوج'));['assignRoom'].forEach(id=>setOptions(id,ro,'اختر القاعة'));setOptions('assignGroup2',go,'— بدون —');setOptions('assignGroup3',go,'— بدون —');setIf('subgroupCountInput',getSubgroupCount());renderSubgroupStudents();refreshAssignmentSubgroups();setOptions('tSubject',su,'اختر المادة');
 setOptions('absStudent',db.students.filter(x=>!val('absGroup')||x.groupId===val('absGroup')).map(x=>({value:x.id,label:`${x.last} ${x.first}`})),'اختر');
 document.getElementById('groupsTable').innerHTML=table(['المستوى','الشعبة','الرقم','التلاميذ','ذكور','إناث','إجراء'],db.groups.map(g=>{const c=genderCounts(db.students.filter(s=>s.groupId===g.id));return `<tr><td>${esc(g.level)}</td><td>${esc(g.branch)}</td><td>${esc(g.number)}</td><td>${c.n}</td><td>${c.m}</td><td>${c.f}</td><td>${delBtn('groups',g.id)}</td></tr>`}));
-document.getElementById('studentsTable').innerHTML=table(['رقم التعريف','اللقب','الاسم','الجنس','الفوج','إجراء'],db.students.slice(0,500).map(x=>`<tr><td>${esc(x.studentNo)}</td><td>${esc(x.last)}</td><td>${esc(x.first)}</td><td>${genderSelect(x.id,x.gender)}</td><td>${esc(groupLabel(getGroup(x.groupId)||{level:'',branch:'',number:''}))}</td><td>${delBtn('students',x.id)}</td></tr>`));
+document.getElementById('studentsTable').innerHTML=table(['رقم التعريف','اللقب','الاسم','تاريخ الميلاد','الجنس','الفوج','إجراء'],db.students.slice(0,500).map(x=>`<tr><td>${esc(x.studentNo)}</td><td>${esc(x.last)}</td><td>${esc(x.first)}</td><td>${esc(x.birthDate||'')}</td><td>${genderSelect(x.id,x.gender)}</td><td>${esc(groupLabel(getGroup(x.groupId)||{level:'',branch:'',number:''}))}</td><td>${delBtn('students',x.id)}</td></tr>`));
 document.getElementById('subjectsTable').innerHTML=table(['المادة','عدد الأساتذة','إجراء'],db.subjects.map(x=>`<tr><td>${esc(x.name)}</td><td>${db.teachers.filter(t=>t.subjectId===x.id).length}</td><td>${delBtn('subjects',x.id)}</td></tr>`));
 document.getElementById('teachersTable').innerHTML=table(['اللقب','الاسم','المادة','إجراء'],db.teachers.map(t=>`<tr><td>${esc(t.last)}</td><td>${esc(t.first)}</td><td>${esc(db.subjects.find(x=>x.id===t.subjectId)?.name||'')}</td><td>${delBtn('teachers',t.id)}</td></tr>`));
 document.getElementById('roomsTable').innerHTML=table(['القاعة','النوع','السعة','الموزع','إجراء'],db.rooms.map(r=>`<tr><td>${esc(r.number)}</td><td>${esc(r.type)}</td><td>${r.capacity}</td><td>${db.assignments.filter(a=>a.roomId===r.id).reduce((n,a)=>n+a.count,0)}</td><td>${delBtn('rooms',r.id)}</td></tr>`));
@@ -2776,7 +2855,7 @@ function printDailyGuards(){
  });
  printHTMLPages('جداول الحراسة اليومية',pages,getPrintOrientation());
 }
-function printRoomLists(){if(!db.assignments.length)return alert('لا توزيعات');let pages=db.assignments.map(a=>{let ids=assignmentStudentIds(a);let ss=ids.map(id=>getStudent(id)).filter(Boolean);const n=ss.length;const compact=n>20;const minRows=compact?n:20;while(ss.length<minRows)ss.push(null);const fs=compact?'font-size:8pt;line-height:1.05':'font-size:10pt;';const pad=compact?'padding:1px 3px':'padding:3px 4px';return `<div class="page-table-fill"><h3 style="text-align:center;margin:2mm 0">قائمة التلاميذ — ${esc(roomLabel(a.roomId))}</h3><p style="text-align:center;margin:0 0 2mm">الفوج: ${esc(assignGroupLabel(a))} — الفوج الفرعي: ${esc(assignmentSubgroupDisplay(a))} — العدد: ${a.count} (${genderBadge(ss.filter(Boolean))})</p><table style="${fs}"><thead><tr><th style="width:8%;${pad}">#</th><th style="${pad}">رقم التعريف</th><th style="${pad}">اللقب</th><th style="${pad}">الاسم</th><th style="width:9%;${pad}">الجنس</th><th style="${pad}">الإمضاء</th></tr></thead><tbody>${ss.map((s,i)=>`<tr><td style="${pad}">${s?i+1:''}</td><td style="${pad}">${s?esc(s.studentNo):''}</td><td style="${pad}">${s?esc(s.last):''}</td><td style="${pad}">${s?esc(s.first):''}</td><td style="${pad}">${s?esc(s.gender||''):''}</td><td style="${pad}"></td></tr>`).join('')}</tbody></table></div>`});printHTMLPages('قوائم التلاميذ',pages)}
+function printRoomLists(){if(!db.assignments.length)return alert('لا توزيعات');let pages=db.assignments.map(a=>{let ids=assignmentStudentIds(a);let ss=ids.map(id=>getStudent(id)).filter(Boolean);const n=ss.length;const compact=n>20;const minRows=compact?n:20;while(ss.length<minRows)ss.push(null);const fs=compact?'font-size:8pt;line-height:1.05':'font-size:10pt;';const pad=compact?'padding:1px 3px':'padding:3px 4px';return `<div class="page-table-fill"><h3 style="text-align:center;margin:2mm 0">قائمة التلاميذ — ${esc(roomLabel(a.roomId))}</h3><p style="text-align:center;margin:0 0 2mm">الفوج: ${esc(assignGroupLabel(a))} — الفوج الفرعي: ${esc(assignmentSubgroupDisplay(a))} — العدد: ${a.count} (${genderBadge(ss.filter(Boolean))})</p><table style="${fs}"><thead><tr><th style="width:8%;${pad}">#</th><th style="${pad}">رقم التعريف</th><th style="${pad}">اللقب</th><th style="${pad}">الاسم</th><th style="${pad}">تاريخ الميلاد</th><th style="width:9%;${pad}">الجنس</th><th style="${pad}">الإمضاء</th></tr></thead><tbody>${ss.map((s,i)=>`<tr><td style="${pad}">${s?i+1:''}</td><td style="${pad}">${s?esc(s.studentNo):''}</td><td style="${pad}">${s?esc(s.last):''}</td><td style="${pad}">${s?esc(s.first):''}</td><td style="${pad}">${s?esc(s.birthDate||''):''}</td><td style="${pad}">${s?esc(s.gender||''):''}</td><td style="${pad}"></td></tr>`).join('')}</tbody></table></div>`});printHTMLPages('قوائم التلاميذ',pages)}
 function buildRoomCountPages(mode,fs){
  const makePage=(rooms,sub)=>{
   const rows=rooms.map(r=>{const as=db.assignments.filter(a=>a.roomId===r.id);const ids=as.flatMap(a=>assignStudents(a));const gc=genderCounts(ids);const n=as.reduce((v,a)=>v+Number(a.count||0),0);
@@ -2853,6 +2932,24 @@ function syncAbsSession(){const se=db.examSessions.find(x=>x.id===val('absSessio
 function refreshAbsentStudents(){const gid=val('absGroup');const se=val('absSession');setOptions('absStudent',db.students.filter(s=>s.groupId===gid).map(s=>({value:s.id,label:`${s.last} ${s.first}`})),'اختر');const bk=db.examBookings.find(b=>b.sessionId===se&&b.groupId===gid);const subj=bk?db.subjects.find(s=>s.id===bk.subjectId):null;const el=document.getElementById('absSubjectDisplay');if(el)el.value=subj?subj.name:''}
 function parseCSV(text){let first=(text.split(/\r?\n/)[0]||''),sep=(first.match(/;/g)||[]).length>(first.match(/,/g)||[]).length?';':',';let out=[],row=[],field='',quoted=false;for(let i=0;i<text.length;i++){let c=text[i];if(c==='"'&&quoted&&text[i+1]==='"'){field+='"';i++}else if(c==='"'){quoted=!quoted}else if(c===sep&&!quoted){row.push(field.trim());field=''}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(field.trim());if(row.some(x=>x!==''))out.push(row);row=[];field=''}else field+=c}row.push(field.trim());if(row.some(x=>x!==''))out.push(row);return out}
 async function readImportRows(file){const ext=(file.name.split('.').pop()||'').toLowerCase();if(['xlsx','xls'].includes(ext)){if(!window.XLSX)throw Error('تعذر تحميل قارئ Excel. افتح الملف مع اتصال بالإنترنت أو احفظه بصيغة CSV من Excel.');const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];return XLSX.utils.sheet_to_json(ws,{header:1,defval:''}).map(r=>r.map(v=>String(v??'').trim())).filter(r=>r.some(v=>v!==''));}return parseCSV(await file.text())}
+function arDigits(x){return String(x==null?'':x).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d))}
+function fmtBirth(v){
+ let t=arDigits(v).trim();if(!t)return '';
+ if(/^\d{4,6}(\.\d+)?$/.test(t)){const n=Math.floor(Number(t));if(n>10000&&n<80000){const d=new Date(Date.UTC(1899,11,30)+n*86400000);return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear()}}
+ let m=t.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);if(m)return m[3].padStart(2,'0')+'/'+m[2].padStart(2,'0')+'/'+m[1];
+ m=t.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);if(m)return m[1].padStart(2,'0')+'/'+m[2].padStart(2,'0')+'/'+m[3];
+ return t;
+}
+function midLevelKey(x){
+ const t=arDigits(norm(x)).replace(/[\u064b-\u0652]/g,'');
+ let k=0;
+ if(/(^|\s)(1|اولي?|اول|الاولي?|الاول)(\s|$)|1\s*am|^1/.test(t)||/اول/.test(t))k=1;
+ else if(/ثاني|(^|\s)2(\s|$)|^2/.test(t))k=2;
+ else if(/ثالث|(^|\s)3(\s|$)|^3/.test(t))k=3;
+ else if(/رابع|(^|\s)4(\s|$)|^4/.test(t))k=4;
+ return k;
+}
+function numKey(x){const t=arDigits(x).trim();return /^\d+(\.0+)?$/.test(t)?String(Number(t)):t.replace(/[\s\u00a0]+/g,' ')}
 async function importStudentsCsv(){
  let f=document.getElementById('studentCsv').files[0];if(!f)return alert('اختر ملف');
  let rows;try{rows=await readImportRows(f)}catch(e){return alert(e.message||'تعذر قراءة الملف')}
@@ -2860,19 +2957,28 @@ async function importStudentsCsv(){
  const h=rows[0].map(norm),idx=(names)=>h.findIndex(x=>names.some(n=>x.includes(norm(n))));
  const iNo=idx(['رقم التعريف','رقم التلميذ','الرقم','id']),iLast=idx(['اللقب','الاسم العائلي','nom']),iFirst=idx(['الاسم','prénom','prenom']);
  const iLevel=idx(['المستوى','السنة','niveau']),iBranch=idx(['الشعبة','branche']),iClass=idx(['القسم','classe','section']),iGroup=idx(['الفوج التربوي','الفوج','groupe']);
-  let iGender=h.findIndex(x=>['الجنس','sexe','gender','genre'].includes(x));if(iGender<0)iGender=h.findIndex(x=>/الجنس(?!ية)|sexe|gender|genre/.test(x));
+  const iBirth=h.findIndex(x=>/تاريخ الميلاد|الميلاد|date de naissance|naissance|birth|dob/.test(x));
+   let iGender=h.findIndex(x=>['الجنس','sexe','gender','genre'].includes(x));if(iGender<0)iGender=h.findIndex(x=>/الجنس(?!ية)|sexe|gender|genre/.test(x));
  if(iLast<0||iFirst<0)return alert('تعذر تحديد عمودي اللقب والاسم');
- const hasSchoolGrouping=iLevel>=0&&iBranch>=0&&iClass>=0;
- if(!hasSchoolGrouping&&iGroup<0&&!val('studentGroup'))return alert('الملف لا يحتوي على المستوى والشعبة والقسم؛ اختر فوجاً للاستيراد');
+ const midMode=getPhase()==='middle'&&iLevel>=0&&(iClass>=0||iGroup>=0);
+  const iNum=iClass>=0?iClass:iGroup;
+  const hasSchoolGrouping=!midMode&&iLevel>=0&&iBranch>=0&&iClass>=0;
+  if(!midMode&&!hasSchoolGrouping&&iGroup<0&&!val('studentGroup'))return alert(getPhase()==='middle'?'الملف لا يحتوي على عمودي المستوى ورقم الفوج؛ أضفهما أو اختر فوجاً للاستيراد':'الملف لا يحتوي على المستوى والشعبة والقسم؛ اختر فوجاً للاستيراد');
  const clean=x=>norm(x).replace(/جدع/g,'جذع').replace(/[\s\u00a0]+/g,' ').trim();
  let added=0,skipped=0,unmatched=new Set(),duplicates=0,genderUpdated=0,invalidRows=0;const mode=val('studentImportMode')||'add',before=db.students.length,byGroup={};let removedStudents=0,removedAbs=0;
  if(mode==='replace'){const nAbs=db.absences.filter(a=>a.studentId).length;if(!confirm(`سيتم حذف ${before} تلميذاً حالياً${nAbs?` و${nAbs} غياباً مرتبطاً بهم`:''} واستبدالهم بقائمة الملف. متابعة؟`))return;removedStudents=before;removedAbs=nAbs;db.students=[];db.absences=db.absences.filter(a=>!a.studentId)}
  for(const r of rows.slice(1)){
    const last=String(r[iLast]||'').trim(),first=String(r[iFirst]||'').trim();if(!last||!first){invalidRows++;continue}
    const no=iNo>=0?String(r[iNo]||'').trim():'';
-   if(no){const ex=db.students.find(s=>String(s.studentNo||'').trim()===no);if(ex){if(iGender>=0){const gv=normGender(r[iGender]);if(gv&&ex.gender!==gv){ex.gender=gv;genderUpdated++}}duplicates++;continue}}
-   let g=null;
-   if(hasSchoolGrouping){
+   if(no){const ex=db.students.find(s=>String(s.studentNo||'').trim()===no);if(ex){if(iGender>=0){const gv=normGender(r[iGender]);if(gv&&ex.gender!==gv){ex.gender=gv;genderUpdated++}}if(iBirth>=0){const bv=fmtBirth(r[iBirth]);if(bv&&ex.birthDate!==bv)ex.birthDate=bv}duplicates++;continue}}
+    let g=null;
+    if(midMode){
+      const lk=midLevelKey(r[iLevel]),nk=numKey(r[iNum]);
+      g=db.groups.find(x=>!String(x.branch||'').trim()&&midLevelKey(x.level)===lk&&lk>0&&numKey(x.number||'')===nk);
+      if(!g&&!nk){const sel=db.groups.filter(x=>!String(x.branch||'').trim()&&midLevelKey(x.level)===lk&&lk>0);if(sel.length===1)g=sel[0]}
+      if(!g){const fb=val('studentGroup');if(fb&&!lk)g=db.groups.find(x=>x.id===fb)}
+      if(!g){skipped++;unmatched.add(`${r[iLevel]} / ${r[iNum]}`);continue}
+    }else if(hasSchoolGrouping){
      const level=clean(r[iLevel]),branch=clean(r[iBranch]),number=clean(r[iClass]);
      g=db.groups.find(x=>clean(x.level)===level&&clean(x.branch)===branch&&clean(x.number)===number);
      if(!g){skipped++;unmatched.add(`${r[iLevel]} / ${r[iBranch]} / ${r[iClass]}`);continue}
@@ -2882,7 +2988,7 @@ async function importStudentsCsv(){
      if(!g){const fallback=val('studentGroup');g=db.groups.find(x=>x.id===fallback)}
      if(!g){skipped++;continue}
    }
-   db.students.push({id:uid(),studentNo:no,last,first,gender:iGender>=0?normGender(r[iGender]):'',groupId:g.id,subgroup:''});added++;{const gl=groupLabel(g);byGroup[gl]=(byGroup[gl]||0)+1}
+   db.students.push({id:uid(),studentNo:no,last,first,gender:iGender>=0?normGender(r[iGender]):'',birthDate:iBirth>=0?fmtBirth(r[iBirth]):'',groupId:g.id,subgroup:''});added++;{const gl=groupLabel(g);byGroup[gl]=(byGroup[gl]||0)+1}
  }
  save();
  let msg=`تم استيراد ${added} تلميذاً.`;
@@ -2906,7 +3012,7 @@ async function importTeachersCsv(){let f=document.getElementById('teacherCsv').f
  const bs=Object.entries(bySub).sort((x,y)=>y[1]-x[1]);
  showImportReport('teacherImportReport',mode==='replace'?'تقرير الاستيراد (استبدال)':'تقرير الاستيراد (إضافة)',[['الصفوف المقروءة',rows.length-1],['أُضيف',added],['مكرر تُجوِّز',duplicates],['صفوف ناقصة',invalid],['مواد جديدة',newSubjects.length],['حُذف سابقاً',removed],['سجلات مرتبطة حُذفت',removedDeps],['الأساتذة قبل',before],['الأساتذة بعد',db.teachers.length],['المواد قبل',subjBefore],['المواد بعد',db.subjects.length]],(bs.length?'<div style="margin-top:6px">المضافون حسب المادة: '+bs.map(([k,v])=>`${esc(k)}: <b>${v}</b>`).join(' | ')+'</div>':'')+(newSubjects.length?'<div class="muted" style="margin-top:6px">مواد أُنشئت: '+esc(newSubjects.join('، '))+'</div>':''));
  toast(`تم استيراد ${added}${duplicates?` — تجاوز ${duplicates} مكرراً`:''}`)}
-function downloadTemplate(kind){const rows=kind==='students'?[['رقم التعريف','اللقب','الاسم','الجنس','الفوج'],['12345','بن صالح','أحمد','ذكر','الثالثة ثانوي علوم تجريبية 01']]:[['اللقب','الاسم','المادة'],['بن صالح','أحمد','الرياضيات']];if(window.XLSX){const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=rows[0].map((_,i)=>({wch:[18,22,22,14,36][i]||20}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,kind==='students'?'التلاميذ':'الأساتذة');XLSX.writeFile(wb,kind==='students'?'نموذج_التلاميذ.xlsx':'نموذج_الأساتذة.xlsx')}else{const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=kind==='students'?'نموذج_التلاميذ.csv':'نموذج_الأساتذة.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),60000)}}
+function downloadTemplate(kind){const rows=kind==='students'?(getPhase()==='middle'?[['رقم التعريف','اللقب','الاسم','الجنس','تاريخ الميلاد','المستوى','رقم الفوج'],['12345','بن صالح','أحمد','ذكر','15/03/2012','أولى متوسط','1']]:[['رقم التعريف','اللقب','الاسم','الجنس','تاريخ الميلاد','الفوج'],['12345','بن صالح','أحمد','ذكر','15/03/2008','الثالثة ثانوي علوم تجريبية 01']]):[['اللقب','الاسم','المادة'],['بن صالح','أحمد','الرياضيات']];if(window.XLSX){const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=rows[0].map((_,i)=>({wch:[18,22,22,14,16,22,14][i]||20}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,kind==='students'?'التلاميذ':'الأساتذة');XLSX.writeFile(wb,kind==='students'?'نموذج_التلاميذ.xlsx':'نموذج_الأساتذة.xlsx')}else{const csv='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=kind==='students'?'نموذج_التلاميذ.csv':'نموذج_الأساتذة.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),60000)}}
 function exportExamDesignsExcel(){if(!window.XLSX)return alert('مكتبة Excel غير متاحة؛ أعد فتح البرنامج أو اتصل بالإنترنت مرة واحدة لتحميلها.');const wb=XLSX.utils.book_new();const sessions=(db.examSessions||[]).map(x=>({'اليوم':x.day||'','التاريخ':x.date||'','من':x.start||'','إلى':x.end||''}));const bookings=(db.examBookings||[]).map(x=>{const se=db.examSessions.find(y=>y.id===x.sessionId),g=getGroup(x.groupId),sub=db.subjects.find(y=>y.id===x.subjectId);return{'اليوم':se?.day||'','التاريخ':se?.date||'','من':se?.start||'','إلى':se?.end||'','المستوى':g?.level||'','الفوج':g?groupLabel(g):'','المادة':sub?.name||''}});XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(sessions.length?sessions:[{'اليوم':'','التاريخ':'','من':'','إلى':''}]),'الحصص');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(bookings.length?bookings:[{'اليوم':'','التاريخ':'','من':'','إلى':'','المستوى':'','الفوج':'','المادة':''}]),'تصاميم الاختبارات');XLSX.writeFile(wb,'تصاميم_الاختبارات.xlsx')}
 function exportBackup(){let blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='نسخة_احتياطية_الاختبارات.json';document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(a.href)},60000)}
 function importBackup(e){let f=e.target.files[0];if(!f)return;let rd=new FileReader();rd.onload=()=>{try{let x=JSON.parse(rd.result);if(!x.groups||!x.students)throw Error();if(!confirm('استبدال؟'))return;appStore.setItem(KEY,JSON.stringify(x));db=loadData();save();toast('تم استرجاع النسخة')}catch(err){alert('ملف غير صالح')}};rd.readAsText(f);e.target.value=''}
