@@ -4,7 +4,7 @@ INSERT OR IGNORE INTO settings(id) VALUES(1);
 CREATE TABLE IF NOT EXISTS invigilation_rules (id INTEGER PRIMARY KEY CHECK(id=1), guards_per_room INTEGER DEFAULT 1, reserve_guards INTEGER DEFAULT 1, max_per_day INTEGER DEFAULT 2, avoid_consecutive_day INTEGER DEFAULT 0, require_consecutive_days INTEGER DEFAULT 0, balance TEXT DEFAULT 'equal', subject_teacher_rule TEXT DEFAULT 'must', subject_rule_explicit INTEGER DEFAULT 0, subject_reserve_count INTEGER DEFAULT 2, balance_extra_guards INTEGER DEFAULT 0, extra_json TEXT NOT NULL DEFAULT '{}');
 INSERT OR IGNORE INTO invigilation_rules(id) VALUES(1);
 CREATE TABLE IF NOT EXISTS groups (id TEXT PRIMARY KEY, level TEXT, branch TEXT, number TEXT);
-CREATE TABLE IF NOT EXISTS students (id TEXT PRIMARY KEY, student_no TEXT, last_name TEXT, first_name TEXT, group_id TEXT, subgroup TEXT);
+CREATE TABLE IF NOT EXISTS students (id TEXT PRIMARY KEY, student_no TEXT, last_name TEXT, first_name TEXT, group_id TEXT, subgroup TEXT, birth_date TEXT DEFAULT '', gender TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS teachers (id TEXT PRIMARY KEY, last_name TEXT, first_name TEXT, subject_id TEXT);
 CREATE TABLE IF NOT EXISTS subjects (id TEXT PRIMARY KEY, name TEXT);
 CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, number TEXT, type TEXT, capacity INTEGER DEFAULT 0, note TEXT);

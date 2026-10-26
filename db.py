@@ -5,7 +5,12 @@ SCHEMA=Path(__file__).with_name('schema.sql')
 SETTINGS=['schoolName','directorate','wilaya','address','schoolYear','semester','subgroupCount','printOrientation']
 RULES=['guardsPerRoom','reserveGuards','maxPerDay','avoidConsecutiveDay','requireConsecutiveDays','balance','subjectTeacherRule','subjectRuleExplicit','subjectReserveCount','balanceExtraGuards']
 def connect(path):
- c=sqlite3.connect(path, timeout=20); c.row_factory=sqlite3.Row; c.execute('PRAGMA journal_mode=WAL'); c.execute('PRAGMA foreign_keys=ON'); c.executescript(SCHEMA.read_text(encoding='utf-8')); c.commit(); return c
+ c=sqlite3.connect(path, timeout=20); c.row_factory=sqlite3.Row; c.execute('PRAGMA journal_mode=WAL'); c.execute('PRAGMA foreign_keys=ON'); c.executescript(SCHEMA.read_text(encoding='utf-8')); _migrate(c); c.commit(); return c
+def _migrate(c):
+ # ترحيل قواعد البيانات القديمة: إضافة عمودي تاريخ الميلاد والجنس لجدول التلاميذ إن لم يوجدا
+ cols={r[1] for r in c.execute('PRAGMA table_info(students)').fetchall()}
+ for name in ('birth_date','gender'):
+  if name not in cols: c.execute("ALTER TABLE students ADD COLUMN "+name+" TEXT DEFAULT ''")
 def _extra(o, known): return json.dumps({k:v for k,v in (o or {}).items() if k not in known},ensure_ascii=False)
 def _group(rows,key,val):
  out={}
@@ -19,7 +24,7 @@ def load_all(c):
  return {'settings':{**json.loads(s['extra_json'] or '{}'),'schoolName':s['school_name'],'directorate':s['directorate'],'wilaya':s['wilaya'],'address':s['address'],'schoolYear':s['school_year'],'semester':s['semester'],'subgroupCount':s['subgroup_count'],'printOrientation':s['print_orientation']},
  'invigilationRules':{**json.loads(r['extra_json'] or '{}'),'guardsPerRoom':r['guards_per_room'],'reserveGuards':r['reserve_guards'],'maxPerDay':r['max_per_day'],'avoidConsecutiveDay':bool(r['avoid_consecutive_day']),'requireConsecutiveDays':bool(r['require_consecutive_days']),'balance':r['balance'],'subjectTeacherRule':r['subject_teacher_rule'],'subjectRuleExplicit':bool(r['subject_rule_explicit']),'subjectReserveCount':r['subject_reserve_count'],'balanceExtraGuards':bool(r['balance_extra_guards'])},
  'groups':[{'id':x['id'],'level':x['level'],'branch':x['branch'],'number':x['number']} for x in allrows('SELECT * FROM groups')],
- 'students':[{'id':x['id'],'studentNo':x['student_no'],'last':x['last_name'],'first':x['first_name'],'groupId':e(x['group_id']),'subgroup':x['subgroup']} for x in allrows('SELECT * FROM students')],
+ 'students':[{'id':x['id'],'studentNo':x['student_no'],'last':x['last_name'],'first':x['first_name'],'groupId':e(x['group_id']),'subgroup':x['subgroup'],'birthDate':e(x.get('birth_date')),'gender':e(x.get('gender'))} for x in allrows('SELECT * FROM students')],
  'teachers':[{'id':x['id'],'last':x['last_name'],'first':x['first_name'],'subjectId':e(x['subject_id'])} for x in allrows('SELECT * FROM teachers')],
  'subjects':[{'id':x['id'],'name':x['name']} for x in allrows('SELECT * FROM subjects')],
  'rooms':[{'id':x['id'],'number':x['number'],'type':x['type'],'capacity':x['capacity'],'note':x['note']} for x in allrows('SELECT * FROM rooms')],
@@ -44,7 +49,7 @@ def save_all(c,d):
   insert('INSERT OR REPLACE INTO subjects VALUES (?,?)',[(x['id'],x.get('name','')) for x in d.get('subjects',[])])
   insert('INSERT OR REPLACE INTO teachers VALUES (?,?,?,?)',[(x['id'],x.get('last',''),x.get('first',''),n(x.get('subjectId'))) for x in d.get('teachers',[])])
   insert('INSERT OR REPLACE INTO rooms VALUES (?,?,?,?,?)',[(x['id'],str(x.get('number','')),x.get('type',''),int(x.get('capacity') or 0),x.get('note','')) for x in d.get('rooms',[])])
-  insert('INSERT OR REPLACE INTO students VALUES (?,?,?,?,?,?)',[(x['id'],x.get('studentNo',''),x.get('last',''),x.get('first',''),n(x.get('groupId')),x.get('subgroup','')) for x in d.get('students',[])])
+  insert('INSERT OR REPLACE INTO students (id,student_no,last_name,first_name,group_id,subgroup,birth_date,gender) VALUES (?,?,?,?,?,?,?,?)',[(x['id'],x.get('studentNo',''),x.get('last',''),x.get('first',''),n(x.get('groupId')),x.get('subgroup',''),x.get('birthDate',''),x.get('gender','')) for x in d.get('students',[])])
   insert('INSERT OR REPLACE INTO exam_sessions VALUES (?,?,?,?,?)',[(x['id'],x.get('day',''),x.get('date',''),x.get('start',''),x.get('end','')) for x in d.get('examSessions',[])])
   insert('INSERT OR REPLACE INTO exam_bookings VALUES (?,?,?,?)',[(x['id'],x.get('sessionId'),n(x.get('subjectId')),n(x.get('groupId'))) for x in d.get('examBookings',[])])
   for x in d.get('assignments',[]):
