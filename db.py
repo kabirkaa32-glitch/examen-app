@@ -11,6 +11,10 @@ def _migrate(c):
  cols={r[1] for r in c.execute('PRAGMA table_info(students)').fetchall()}
  for name in ('birth_date','gender'):
   if name not in cols: c.execute("ALTER TABLE students ADD COLUMN "+name+" TEXT DEFAULT ''")
+ # حفظ جنس الحجز وعلامة القاعة المشتركة في جدول التوزيعات
+ acols={r[1] for r in c.execute('PRAGMA table_info(assignments)').fetchall()}
+ if 'gender' not in acols: c.execute("ALTER TABLE assignments ADD COLUMN gender TEXT DEFAULT ''")
+ if 'shared' not in acols: c.execute("ALTER TABLE assignments ADD COLUMN shared INTEGER DEFAULT 0")
 def _extra(o, known): return json.dumps({k:v for k,v in (o or {}).items() if k not in known},ensure_ascii=False)
 def _group(rows,key,val):
  out={}
@@ -30,7 +34,7 @@ def load_all(c):
  'rooms':[{'id':x['id'],'number':x['number'],'type':x['type'],'capacity':x['capacity'],'note':x['note']} for x in allrows('SELECT * FROM rooms')],
  'examSessions':[{'id':x['id'],'day':x['day'],'date':x['date'],'start':x['start'],'end':x['end']} for x in allrows('SELECT * FROM exam_sessions')],
  'examBookings':[{'id':x['id'],'sessionId':x['session_id'],'subjectId':e(x['subject_id']),'groupId':e(x['group_id'])} for x in allrows('SELECT * FROM exam_bookings')],
- 'assignments':[dict({'id':x['id'],'groupId':e(x['group_id']),'roomId':e(x['room_id']),'sub':x['sub'],'count':x['count'],'studentIds':stu.get(str(x['id']),[]),'manual':bool(x['manual'])}, **({'merged':True,'groupIds':grp.get(str(x['id']),[])} if x['merged'] else {})) for x in allrows('SELECT * FROM assignments')],
+ 'assignments':[dict({'id':x['id'],'groupId':e(x['group_id']),'roomId':e(x['room_id']),'sub':x['sub'],'count':x['count'],'studentIds':stu.get(str(x['id']),[]),'manual':bool(x['manual']),'gender':e(x.get('gender'))}, **({'merged':True,'groupIds':grp.get(str(x['id']),[])} if x['merged'] else {}), **({'sharedRoom':True} if x.get('shared') else {})) for x in allrows('SELECT * FROM assignments')],
  'absences':[{'id':x['id'],'date':x['date'],'time':x['time'],'subjectId':e(x['subject_id']),'groupId':e(x['group_id']),'studentId':e(x['student_id']),'justified':x['justified'],'reason':x['reason'],'sessionId':e(x['session_id'])} for x in allrows('SELECT * FROM absences')],
  'invigilations':[{'id':x['id'],'date':x['date'],'period':x['period'],'time':x['time'],'teacherId':e(x['teacher_id']),'roomId':e(x['room_id']),'status':x['status'],'justified':x['justified'],'note':x['note'],'sessionId':e(x['session_id']),'seat':x['seat'],'mandatory':bool(x['mandatory'])} for x in allrows('SELECT * FROM invigilations')],
  'teacherGuardAbsences':[{'id':x['id'],'sessionId':e(x['session_id']),'date':x['date'],'period':x['period'],'time':x['time'],'teacherId':e(x['teacher_id']),'justified':x['justified'],'note':x['note']} for x in allrows('SELECT * FROM teacher_guard_absences')],
@@ -53,7 +57,7 @@ def save_all(c,d):
   insert('INSERT OR REPLACE INTO exam_sessions VALUES (?,?,?,?,?)',[(x['id'],x.get('day',''),x.get('date',''),x.get('start',''),x.get('end','')) for x in d.get('examSessions',[])])
   insert('INSERT OR REPLACE INTO exam_bookings VALUES (?,?,?,?)',[(x['id'],x.get('sessionId'),n(x.get('subjectId')),n(x.get('groupId'))) for x in d.get('examBookings',[])])
   for x in d.get('assignments',[]):
-   c.execute('INSERT OR REPLACE INTO assignments VALUES (?,?,?,?,?,?,?)',(x['id'],n(x.get('groupId')),n(x.get('roomId')),x.get('sub','كامل'),x.get('count',0),int(bool(x.get('manual'))),int(bool(x.get('merged')))))
+   c.execute('INSERT OR REPLACE INTO assignments (id,group_id,room_id,sub,count,manual,merged,gender,shared) VALUES (?,?,?,?,?,?,?,?,?)',(x['id'],n(x.get('groupId')),n(x.get('roomId')),x.get('sub','كامل'),x.get('count',0),int(bool(x.get('manual'))),int(bool(x.get('merged'))),x.get('gender','') or '',int(bool(x.get('sharedRoom')))))
    insert('INSERT OR IGNORE INTO assignment_students VALUES (?,?)',[(x['id'],i) for i in x.get('studentIds',[])])
    insert('INSERT OR IGNORE INTO assignment_groups VALUES (?,?)',[(x['id'],i) for i in x.get('groupIds',[])])
   insert('INSERT OR REPLACE INTO absences VALUES (?,?,?,?,?,?,?,?,?)',[(x['id'],n(x.get('date')),x.get('time',''),n(x.get('subjectId')),n(x.get('groupId')),n(x.get('studentId')),n(x.get('sessionId')),x.get('justified',''),x.get('reason','')) for x in d.get('absences',[])])

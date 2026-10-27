@@ -154,6 +154,7 @@ def install_update(text):
     tmp=UPDATES/'current.gupd.tmp'; tmp.write_text(text.strip(),encoding='utf-8'); tmp.replace(cur)
     active_renderer(); return {'ok':True,'version':v['version']}
 
+PDF_HOOK=None     # دالة (html, orientation) -> bytes تُنشئ PDF في خيط الواجهة وتنتظر النتيجة
 PRINT_HOOK=None   # يُضبط عند تشغيل النافذة: دالة تستقبل 'portrait' أو 'landscape' وتطلق الطباعة في خيط الواجهة
 MIME={'.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.ico':'image/x-icon','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf'}
 def ctype(name):return MIME.get(Path(name).suffix.lower(),'application/octet-stream')
@@ -193,7 +194,7 @@ class Handler(BaseHTTPRequestHandler):
     def body(self):
         try:return json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))) or b'{}')
         except Exception:return {}
-    def do_OPTIONS(self):self.send_response(204); self.send_header('Access-Control-Allow-Origin','*'); self.send_header('Access-Control-Allow-Headers','Content-Type,X-KV-Key,X-Password'); self.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS'); self.end_headers()
+    def do_OPTIONS(self):self.send_response(204); self.send_header('Access-Control-Allow-Origin',f'http://127.0.0.1:{PORT}'); self.send_header('Access-Control-Allow-Headers','Content-Type,X-KV-Key,X-Password'); self.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS'); self.end_headers()
     def do_GET(self):
         p=urlparse(self.path).path
         if p.startswith('/api/'):
@@ -203,6 +204,8 @@ class Handler(BaseHTTPRequestHandler):
                 elif p=='/api/device':self.reply({'value':device_id()})
                 elif p=='/api/licstatus':self.reply(lic_status(c))
                 elif p=='/api/updinfo':self.reply({'version':renderer_version,'shell':shell_version})
+                elif p=='/api/mailcfg':self.reply(mail_public(mail_load()))
+                elif p=='/api/maildiag':self.reply(mail_diag())
                 elif p=='/api/kvget':
                     k=self.headers.get('X-KV-Key',''); self.reply({'value':store.get_user(c) if k=='exam_local_user' else None})
                 elif p=='/api/checkpw':self.reply({'value':store.check_password(c,unquote(self.headers.get('X-Password','')))})
@@ -226,6 +229,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header('Content-Type',content_type); self.send_header('Content-Length',str(len(data)))
         self.send_header('Cache-Control','max-age=86400' if cache else 'no-store'); self.end_headers(); self.wfile.write(data)
     def do_POST(self):
+        o=self.headers.get('Origin')
+        if o and urlparse(o).hostname not in ('127.0.0.1','localhost'):self.reply({'error':'مرفوض'},403);return
         p=urlparse(self.path).path; body=self.body(); c=store.connect(DBFILE)
         try:
             if p=='/api/save':
@@ -243,6 +248,13 @@ class Handler(BaseHTTPRequestHandler):
                 if st.get('ok') and st.get('state') in ('trial','full'):
                     c.execute("UPDATE license SET device_id=?,code=?,activated=1,activation_code=?,activated_at=datetime('now') WHERE id=1",(device_id(),code,code));c.commit();self.reply({'ok':True,**lic_status(c)})
                 else:self.reply({'ok':False,'error':st.get('error','انتهت صلاحية هذا الكود')})
+            elif p=='/api/mailcfg':self.reply(mail_public(mail_save(body)))
+            elif p=='/api/sendmail':self.reply(mail_send(body))
+            elif p=='/api/openurl':
+                u=OPEN_URLS.get(str(body.get('key','')))
+                if u:
+                    import webbrowser;webbrowser.open(u);self.reply({'ok':True})
+                else:self.reply({'ok':False},400)
             elif p=='/api/install_update':self.reply(install_update(str(body.get('text',''))))
             elif p=='/api/print':
                 o='landscape' if body.get('orientation')=='landscape' else 'portrait'
@@ -250,6 +262,132 @@ class Handler(BaseHTTPRequestHandler):
                 else:self.reply({'ok':False,'error':'الطباعة غير متاحة'},503)
             else:self.reply({'error':'غير معروف'},404)
         finally:c.close()
+
+# ---------- إرسال البريد (SMTP) ----------
+MAILCFG=APP/'mail.json'
+def _mail_key():
+    from cryptography.fernet import Fernet
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(('guard-mail|'+device_id()).encode()).digest()))
+def mail_load():
+    try:cfg=json.loads(MAILCFG.read_text(encoding='utf-8'))
+    except Exception:cfg={}
+    cfg.setdefault('host','');cfg.setdefault('port',465);cfg.setdefault('security','ssl')
+    cfg.setdefault('user','');cfg.setdefault('sender','');cfg.setdefault('emails',{});cfg.setdefault('pw','');cfg.setdefault('mode','smtp')
+    return cfg
+def mail_public(cfg):
+    o={k:v for k,v in cfg.items() if k!='pw'}; o['hasPassword']=bool(cfg.get('pw')); o['api']=2; return o
+def mail_save(body):
+    cfg=mail_load()
+    for k in ('host','user','sender'):
+        if k in body:cfg[k]=str(body.get(k) or '').strip()[:200]
+    if 'port' in body:
+        try:cfg['port']=max(1,min(65535,int(body.get('port'))))
+        except Exception:pass
+    if body.get('security') in ('ssl','starttls','none'):cfg['security']=body['security']
+    if body.get('mode') in ('smtp','outlook'):cfg['mode']=body['mode']
+    if body.get('password'):
+        cfg['pw']=_mail_key().encrypt(str(body['password']).encode()).decode()
+    if isinstance(body.get('emails'),dict):
+        cfg['emails']={str(k)[:64]:str(v).strip()[:200] for k,v in body['emails'].items() if str(v).strip()}
+    MAILCFG.write_text(json.dumps(cfg,ensure_ascii=False),encoding='utf-8')
+    return cfg
+OPEN_URLS={'gmail_2sv':'https://myaccount.google.com/signinoptions/two-step-verification','gmail_apppw':'https://myaccount.google.com/apppasswords','yahoo_apppw':'https://login.yahoo.com/account/security','ms_security':'https://account.live.com/proofs/manage'}
+def mail_diag():
+    cfg=mail_load(); ol=False
+    if sys.platform=='win32':
+        try:
+            import subprocess
+            ol=subprocess.run(['reg','query',r'HKCR\Outlook.Application\CLSID'],capture_output=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)).returncode==0
+        except Exception:ol=False
+    return {'api':2,'mode':cfg.get('mode','smtp'),'outlook_installed':ol,'pdf':bool(PDF_HOOK),'smtp_ready':bool(cfg.get('host') and cfg.get('user') and cfg.get('pw'))}
+EMAIL_RE=re.compile(r'^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$')
+OUTLOOK_PS=r'''param([string]$Json)
+$ErrorActionPreference='Stop'
+try{
+ $p=Get-Content -Raw -Encoding UTF8 -LiteralPath $Json | ConvertFrom-Json
+ try{$ol=[Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')}catch{$ol=New-Object -ComObject Outlook.Application}
+ $m=$ol.CreateItem(0)
+ $m.To=$p.to;$m.Subject=$p.subject;$m.Body=$p.body
+ if($p.attach){[void]$m.Attachments.Add($p.attach)}
+ $m.Send()
+ exit 0
+}catch{[Console]::Error.WriteLine($_.Exception.Message);exit 1}
+'''
+def outlook_send(to,subject,text,pdf_bytes=None,fname='جدول الحراسة.pdf'):
+    """الإرسال عبر Outlook الكلاسيكي المثبّت على ويندوز (بدون كلمة مرور) باستعمال COM عبر PowerShell."""
+    if sys.platform!='win32':return {'ok':False,'error':'خيار Outlook متاح على ويندوز فقط'}
+    import tempfile,subprocess
+    d=Path(tempfile.mkdtemp(prefix='guard-ol-'))
+    try:
+        att=''
+        if pdf_bytes:
+            (d/fname).write_bytes(pdf_bytes); att=str(d/fname)
+        job=d/'job.json'; job.write_text(json.dumps({'to':to,'subject':subject,'body':text,'attach':att},ensure_ascii=False),encoding='utf-8-sig')
+        ps=d/'send.ps1'; ps.write_text(OUTLOOK_PS,encoding='utf-8-sig')
+        r=subprocess.run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',str(ps),str(job)],capture_output=True,timeout=90,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if r.returncode==0:return {'ok':True}
+        err=(r.stderr or b'').decode('utf-8','replace').strip()[:160]
+        return {'ok':False,'error':'تعذر الإرسال عبر Outlook. يلزم Outlook للحاسوب (النسخة الكلاسيكية) مفتوحًا على حسابك؛ النسخة الجديدة «New Outlook» لا تدعم هذا الخيار، فاستعمل «حساب بريد» بدلها. '+err}
+    except subprocess.TimeoutExpired:
+        return {'ok':False,'error':'انتهت مهلة Outlook: قد يكون ينتظر موافقتك في نافذة أمان، أو غير مفتوح'}
+    except Exception as e:
+        return {'ok':False,'error':'تعذر الإرسال عبر Outlook: '+str(e)[:120]}
+    finally:
+        shutil.rmtree(d,ignore_errors=True)
+def mail_send(body):
+    import smtplib, ssl
+    from email.message import EmailMessage
+    from email.utils import formataddr
+    cfg=mail_load()
+    to=str(body.get('to','')).strip()
+    if not EMAIL_RE.match(to):return {'ok':False,'error':'البريد الإلكتروني للمستلم غير صالح'}
+    outlook=cfg.get('mode')=='outlook'
+    pw=''
+    if not outlook:
+        if not cfg['host'] or not cfg['user'] or not cfg['pw']:return {'ok':False,'error':'أدخل بريد الإرسال وكلمة المرور في «حساب الإرسال» واحفظهما أولًا'}
+        try:pw=_mail_key().decrypt(cfg['pw'].encode()).decode()
+        except Exception:return {'ok':False,'error':'تعذر قراءة كلمة المرور المحفوظة، أعد إدخالها'}
+    pdf_bytes=None
+    if body.get('pdf_html'):
+        if not PDF_HOOK:return {'ok':False,'error':'إنشاء ملف PDF غير متاح في هذا الوضع'}
+        try:pdf_bytes=PDF_HOOK(str(body['pdf_html']),'landscape' if body.get('orientation')=='landscape' else 'portrait')
+        except Exception:pdf_bytes=None
+        if not pdf_bytes:return {'ok':False,'error':'تعذر إنشاء ملف PDF'}
+    fname=re.sub(r'[\\/:*?"<>|\r\n]+','_',str(body.get('filename') or 'جدول الحراسة'))[:80].strip() or 'جدول الحراسة'
+    if not fname.lower().endswith('.pdf'):fname+='.pdf'
+    if outlook:
+        return outlook_send(to,re.sub(r'[\r\n]+',' ',str(body.get('subject') or 'جدول الحراسة'))[:200],str(body.get('text') or ''),pdf_bytes,fname)
+    msg=EmailMessage()
+    subject=re.sub(r'[\r\n]+',' ',str(body.get('subject') or 'جدول الحراسة'))[:200]
+    msg['Subject']=subject
+    sender_addr=cfg['user'] if EMAIL_RE.match(cfg['user']) else (cfg.get('sender') if EMAIL_RE.match(cfg.get('sender','')) else cfg['user'])
+    msg['From']=formataddr((re.sub(r'[\r\n]+',' ',cfg.get('sender') or '') if not EMAIL_RE.match(cfg.get('sender','')) else '',sender_addr))
+    msg['To']=to
+    msg.set_content(str(body.get('text') or ''))
+    if body.get('html'):msg.add_alternative(str(body.get('html')),subtype='html')
+    if pdf_bytes:
+        msg.add_attachment(pdf_bytes,maintype='application',subtype='pdf',filename=fname)
+    try:
+        ctx=ssl.create_default_context()
+        port=int(cfg['port'])
+        if cfg['security']=='ssl':s=smtplib.SMTP_SSL(cfg['host'],port,timeout=30,context=ctx)
+        else:
+            s=smtplib.SMTP(cfg['host'],port,timeout=30)
+            if cfg['security']=='starttls':s.starttls(context=ctx)
+        try:
+            s.login(cfg['user'],pw); s.send_message(msg)
+        finally:
+            try:s.quit()
+            except Exception:pass
+        return {'ok':True}
+    except smtplib.SMTPAuthenticationError:
+        return {'ok':False,'error':'فشل تسجيل الدخول: تحقق من البريد وكلمة المرور (في Gmail استعمل «كلمة مرور التطبيق» من 16 حرفًا وليس كلمة مرور الحساب)'}
+    except smtplib.SMTPRecipientsRefused:
+        return {'ok':False,'error':'رفض الخادم عنوان المستلم، تحقق من بريد الأستاذ'}
+    except (TimeoutError,OSError) as e:
+        return {'ok':False,'error':'تعذر الاتصال بخادم البريد. تأكد من الإنترنت، وقد تحجب شبكة المؤسسة هذا الاتصال ('+str(e)[:80]+')'}
+    except Exception as e:
+        return {'ok':False,'error':'تعذر الإرسال: '+str(e)}
 
 TITLE='برنامج تسيير الامتحانات'
 LOGFILE=APP/'guard.log'
@@ -275,7 +413,7 @@ def run_gui(server):
     from PySide6.QtWebEngineCore import QWebEnginePage,QWebEngineProfile,QWebEngineDownloadRequest
     from PySide6.QtPrintSupport import QPrinter,QPrintDialog
     import tempfile
-    global PRINT_HOOK
+    global PRINT_HOOK,PDF_HOOK
 
     try:
         if sys.platform=='win32':
@@ -388,6 +526,40 @@ def run_gui(server):
                 import traceback;traceback.print_exc()
     bridge=Bridge()
     PRINT_HOOK=lambda o:bridge.print_requested.emit(o)
+
+    # ---------- إنشاء PDF صامت (لإرفاقه بالبريد) ----------
+    import threading,uuid
+    from PySide6.QtCore import QTimer
+    pdf_jobs={}
+    class PdfBridge(QObject):
+        requested=Signal(str,str,str)
+        def __init__(self):
+            super().__init__(); self.requested.connect(self._run)
+        @Slot(str,str,str)
+        def _run(self,token,html,o):
+            job=pdf_jobs.get(token)
+            if not job:return
+            pg=QWebEnginePage(profile,self)
+            def finish(data=None):
+                if job.get('done'):return
+                job['done']=True
+                try:job['data']=bytes(data) if data is not None and len(data)>0 else None
+                except Exception:job['data']=None
+                job['ev'].set(); QTimer.singleShot(0,pg.deleteLater)
+            def loaded(ok):
+                if not ok:finish(None);return
+                lay=QPageLayout(QPageSize(QPageSize.PageSizeId.A4),QPageLayout.Orientation.Landscape if o=='landscape' else QPageLayout.Orientation.Portrait,QMarginsF(10,10,10,10),QPageLayout.Unit.Millimeter)
+                # مهلة قصيرة ليُحمَّل الخط قبل الطباعة
+                QTimer.singleShot(400,lambda:pg.printToPdf(finish,lay))
+            pg.loadFinished.connect(loaded)
+            pg.setHtml(html,QUrl(f'http://127.0.0.1:{PORT}/'))
+    pdf_bridge=PdfBridge()
+    def make_pdf(html,o):
+        token=uuid.uuid4().hex; job={'ev':threading.Event(),'data':None}; pdf_jobs[token]=job
+        pdf_bridge.requested.emit(token,html,o)
+        job['ev'].wait(45); pdf_jobs.pop(token,None)
+        return job['data']
+    PDF_HOOK=make_pdf
 
     view.resize(1280,800); view.load(QUrl(f'http://127.0.0.1:{PORT}/')); view.showMaximized()
     app.aboutToQuit.connect(server.shutdown)

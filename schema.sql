@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS subjects (id TEXT PRIMARY KEY, name TEXT);
 CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, number TEXT, type TEXT, capacity INTEGER DEFAULT 0, note TEXT);
 CREATE TABLE IF NOT EXISTS exam_sessions (id TEXT PRIMARY KEY, day TEXT, date TEXT, start TEXT, end TEXT);
 CREATE TABLE IF NOT EXISTS exam_bookings (id TEXT PRIMARY KEY, session_id TEXT, subject_id TEXT, group_id TEXT);
-CREATE TABLE IF NOT EXISTS assignments (id TEXT PRIMARY KEY, group_id TEXT, room_id TEXT, sub TEXT, count INTEGER DEFAULT 0, manual INTEGER DEFAULT 0, merged INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS assignments (id TEXT PRIMARY KEY, group_id TEXT, room_id TEXT, sub TEXT, count INTEGER DEFAULT 0, manual INTEGER DEFAULT 0, merged INTEGER DEFAULT 0, gender TEXT DEFAULT '', shared INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS assignment_students (assignment_id TEXT, student_id TEXT, PRIMARY KEY(assignment_id,student_id));
 CREATE TABLE IF NOT EXISTS assignment_groups (assignment_id TEXT, group_id TEXT, PRIMARY KEY(assignment_id,group_id));
 CREATE TABLE IF NOT EXISTS absences (id TEXT PRIMARY KEY, date TEXT, time TEXT, subject_id TEXT, group_id TEXT, student_id TEXT, session_id TEXT, justified TEXT, reason TEXT);
