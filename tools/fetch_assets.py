@@ -14,6 +14,7 @@ XLSX_URL = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
 FAMILIES = ["Cairo", "Tajawal", "Almarai", "Amiri", "Noto Naskh Arabic", "Noto Kufi Arabic", "Changa",
             "Reem Kufi", "El Messiri", "Harmattan", "Lateef", "Markazi Text", "Scheherazade New",
             "IBM Plex Sans Arabic", "Mada", "Aref Ruqaa"]
+REQUIRED = {"Amiri", "Noto Naskh Arabic", "Cairo", "Tajawal", "Almarai"}   # يفشل البناء إن تعذّر أيٌّ منها: ثبات الطباعة بين الأجهزة
 KEEP_SUBSETS = {"arabic", "latin"}          # العربية + الأرقام/اللاتينية فقط لتقليل الحجم
 
 
@@ -88,13 +89,12 @@ def fetch_fonts():
     print(f"fonts: {ok}/{len(FAMILIES)} families, {size} KB")
     for b in bad:
         print("::warning::font skipped - " + b)
+    missing = [f for f in REQUIRED if any(x.startswith(f + ":") for x in bad)]
+    css_all = (fonts_dir / "fonts.css").read_text(encoding="utf-8")
+    if missing or "Amiri" not in css_all:
+        raise SystemExit("required fonts missing: " + ", ".join(missing or ["Amiri"]) + " - build aborted so printing stays identical on all devices")
 
 
 if __name__ == "__main__":
     fetch_xlsx()                       # إلزامي: يفشل البناء إن تعذّر
-    try:
-        fetch_fonts()
-    except Exception as e:             # noqa: BLE001
-        print(f"::warning::fonts step failed ({e}); building with system fonts")
-        d = ROOT / "fonts"; d.mkdir(exist_ok=True)
-        (d / "fonts.css").write_text("/* fonts unavailable at build time */\n", encoding="utf-8")
+    fetch_fonts()                      # إلزامي: بدون الخطوط المضمّنة تختلف الطباعة من جهاز إلى آخر
