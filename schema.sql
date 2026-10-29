@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS teachers (id TEXT PRIMARY KEY, last_name TEXT, first_
 CREATE TABLE IF NOT EXISTS subjects (id TEXT PRIMARY KEY, name TEXT);
 CREATE TABLE IF NOT EXISTS rooms (id TEXT PRIMARY KEY, number TEXT, type TEXT, capacity INTEGER DEFAULT 0, note TEXT);
 CREATE TABLE IF NOT EXISTS exam_sessions (id TEXT PRIMARY KEY, day TEXT, date TEXT, start TEXT, end TEXT);
-CREATE TABLE IF NOT EXISTS exam_bookings (id TEXT PRIMARY KEY, session_id TEXT, subject_id TEXT, group_id TEXT);
-CREATE TABLE IF NOT EXISTS assignments (id TEXT PRIMARY KEY, group_id TEXT, room_id TEXT, sub TEXT, count INTEGER DEFAULT 0, manual INTEGER DEFAULT 0, merged INTEGER DEFAULT 0, gender TEXT DEFAULT '', shared INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS exam_bookings (id TEXT PRIMARY KEY, session_id TEXT, subject_id TEXT, group_id TEXT, subject2_id TEXT);
+CREATE TABLE IF NOT EXISTS assignments (id TEXT PRIMARY KEY, group_id TEXT, room_id TEXT, sub TEXT, count INTEGER DEFAULT 0, manual INTEGER DEFAULT 0, merged INTEGER DEFAULT 0, gender TEXT DEFAULT '', shared INTEGER DEFAULT 0, shared_same_time INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS assignment_students (assignment_id TEXT, student_id TEXT, PRIMARY KEY(assignment_id,student_id));
 CREATE TABLE IF NOT EXISTS assignment_groups (assignment_id TEXT, group_id TEXT, PRIMARY KEY(assignment_id,group_id));
 CREATE TABLE IF NOT EXISTS absences (id TEXT PRIMARY KEY, date TEXT, time TEXT, subject_id TEXT, group_id TEXT, student_id TEXT, session_id TEXT, justified TEXT, reason TEXT);
@@ -23,3 +23,6 @@ CREATE TABLE IF NOT EXISTS app_user (id INTEGER PRIMARY KEY CHECK(id=1), usernam
 INSERT OR IGNORE INTO app_user(id) VALUES(1);
 CREATE TABLE IF NOT EXISTS license (id INTEGER PRIMARY KEY CHECK(id=1), device_id TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '', last_seen INTEGER NOT NULL DEFAULT 0, activated INTEGER NOT NULL DEFAULT 0, activation_code TEXT NOT NULL DEFAULT '', activated_at TEXT);
 INSERT OR IGNORE INTO license(id) VALUES(1);
+-- بيانات الواجهة التي ليس لها جدول مستقل (الحجوزات المؤقتة، المواد المسبقة، وثائق الاستلام، سجلات المراقبة...) تُحفظ كما هي بصيغة JSON
+CREATE TABLE IF NOT EXISTS app_extras (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL DEFAULT '{}');
+INSERT OR IGNORE INTO app_extras(id) VALUES(1);
