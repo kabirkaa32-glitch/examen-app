@@ -2396,6 +2396,20 @@ function batchSubgroupLabel(batch){return '';}
 
 function printRoomCovers(){
  if(!db.assignments.length)return alert('لا توزيعات');
+ const old=document.getElementById('roomCoverModeModal');if(old)old.remove();
+ const last=(db.settings&&db.settings.coverMode)==='single'?'single':'shared';
+ const ov=document.createElement('div');ov.id='roomCoverModeModal';ov.className='no-print';
+ ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:99999;display:flex;align-items:center;justify-content:center;direction:rtl';
+ const opt=(v,t,d)=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;margin:8px 0;cursor:pointer;background:#fff"><input type="radio" name="rcMode" value="${v}" ${last===v?'checked':''} style="appearance:auto;-webkit-appearance:radio;width:18px!important;height:18px!important;min-width:18px;margin:3px 0 0;flex:0 0 18px"><span><b>${t}</b><small style="display:block;color:#64748b;margin-top:2px;line-height:1.6">${d}</small></span></label>`;
+ ov.innerHTML=`<div style="background:#f8fafc;border-radius:12px;padding:18px 20px;width:min(430px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.3)"><h3 style="margin:0 0 6px;color:#15803d">🖨️ طباعة واجهات القاعات</h3><p style="margin:0 0 6px;color:#475569;font-size:13px">اختر طريقة الطباعة:</p>${opt('shared','قاعات مشتركة (الحالية)','واجهة واحدة لكل قاعة، تُذكر فيها كل الأفواج المشتركة فيها.')}${opt('single','قاعة منفردة','تُكرَّر القاعة التي تجمع أكثر من فوج: واجهة مستقلة لكل فوج.')}<div style="display:flex;gap:8px;justify-content:flex-start;margin-top:12px"><button type="button" id="rcGo">🖨️ طباعة</button><button type="button" class="secondary" id="rcCancel">إلغاء</button></div></div>`;
+ document.body.appendChild(ov);
+ const close=()=>ov.remove();
+ ov.addEventListener('click',e=>{if(e.target===ov)close()});
+ ov.querySelector('#rcCancel').onclick=close;
+ ov.querySelector('#rcGo').onclick=()=>{const m=(ov.querySelector('input[name=rcMode]:checked')||{}).value==='single'?'single':'shared';db.settings={...db.settings,coverMode:m};try{persist()}catch(e){}close();printRoomCoversRun(m)};
+}
+function printRoomCoversRun(mode){
+ if(!db.assignments.length)return alert('لا توزيعات');
  const s=db.settings||{};const today=new Date().toLocaleDateString('fr-CA');const o=setPrintOrientation();
  const cls='print-page'+(o==='portrait'?'':' landscape-sheet');
  // واجهة واحدة لكل قاعة؛ لا ننشئ صفحة لكل توقيت أو لكل حجز مكرر.
@@ -2418,7 +2432,8 @@ function printRoomCovers(){
      });
    });
    const rows=[...unique.values()].sort((a,b)=>groupLabel(a.group).localeCompare(groupLabel(b.group),'ar')||a.sub.localeCompare(b.sub,'ar'));
-   const groups=rows.map(x=>`<span style="display:block;margin:1mm 0">الفوج التربوي: ${esc(groupLabel(x.group))}<br>الفوج الفرعي: ${esc(x.sub)}<br>العدد: <b>${x.studentIds.size}</b></span>`).join('');
+   const cover=(rs)=>{
+   const groups=rs.map(x=>`<span style="display:block;margin:1mm 0">الفوج التربوي: ${esc(groupLabel(x.group))}<br>الفوج الفرعي: ${esc(x.sub)}<br>العدد: <b>${x.studentIds.size}</b></span>`).join('');
    const num=String(r?.number||''),len=num.length;
    const fs=Math.round((len<=2?230:len===3?195:len===4?160:len<=6?120:80)*.8);
    return `<div class="${cls}"><div class="room-cover portrait">
@@ -2427,6 +2442,12 @@ function printRoomCovers(){
 <div class="rc-mid"><div class="rc-wrap"><div class="rc-kind">${esc(r?.type||'قاعة')} رقم :</div><div class="rc-frame"><div class="rc-num" style="font-size:${fs}pt">${esc(num)}</div></div></div></div>
 <div class="rc-sign" style="justify-content:flex-end"><div style="text-align:left">حرر بـ ${esc(s.address||s.schoolName||'..........')} في: ${esc(today)}<br><br>الختم والإمضاء</div></div>
 </div></div>`;
+   };
+   if(mode==='single'){
+     const byG=new Map();rows.forEach(x=>{if(!byG.has(x.groupId))byG.set(x.groupId,[]);byG.get(x.groupId).push(x)});
+     return [...byG.values()].map(cover).join('');
+   }
+   return cover(rows);
  }).filter(Boolean).join('');
  document.getElementById('printArea').innerHTML=content;printUsingGlobalOrientation();
 }
