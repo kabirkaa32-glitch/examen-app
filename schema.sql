@@ -19,10 +19,13 @@ CREATE TABLE IF NOT EXISTS teacher_guard_absences (id TEXT PRIMARY KEY, session_
 CREATE TABLE IF NOT EXISTS double_room_rules (id TEXT PRIMARY KEY, session_id TEXT, count INTEGER DEFAULT 1);
 CREATE TABLE IF NOT EXISTS double_room_rule_rooms (rule_id TEXT, room_id TEXT, PRIMARY KEY(rule_id,room_id));
 CREATE TABLE IF NOT EXISTS exclusion_rules (id TEXT PRIMARY KEY, teacher_id TEXT, date TEXT, start TEXT, end TEXT);
-CREATE TABLE IF NOT EXISTS app_user (id INTEGER PRIMARY KEY CHECK(id=1), username TEXT NOT NULL DEFAULT 'admin', password_hash TEXT NOT NULL DEFAULT '', password_salt TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS app_user (id INTEGER PRIMARY KEY CHECK(id=1), username TEXT NOT NULL DEFAULT 'admin', password_hash TEXT NOT NULL DEFAULT '', password_salt TEXT NOT NULL DEFAULT '', recovery_hash TEXT NOT NULL DEFAULT '', recovery_salt TEXT NOT NULL DEFAULT '');
 INSERT OR IGNORE INTO app_user(id) VALUES(1);
 CREATE TABLE IF NOT EXISTS license (id INTEGER PRIMARY KEY CHECK(id=1), device_id TEXT NOT NULL DEFAULT '', code TEXT NOT NULL DEFAULT '', last_seen INTEGER NOT NULL DEFAULT 0, activated INTEGER NOT NULL DEFAULT 0, activation_code TEXT NOT NULL DEFAULT '', activated_at TEXT);
 INSERT OR IGNORE INTO license(id) VALUES(1);
 -- بيانات الواجهة التي ليس لها جدول مستقل (الحجوزات المؤقتة، المواد المسبقة، وثائق الاستلام، سجلات المراقبة...) تُحفظ كما هي بصيغة JSON
 CREATE TABLE IF NOT EXISTS app_extras (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL DEFAULT '{}');
 INSERT OR IGNORE INTO app_extras(id) VALUES(1);
+-- موافقة المستخدم على شروط الاستخدام والخصوصية والأمان (تُعرض بعد تسجيل الدخول)
+CREATE TABLE IF NOT EXISTS terms_acceptance (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL DEFAULT '', accepted_at TEXT, username TEXT NOT NULL DEFAULT '', device_id TEXT NOT NULL DEFAULT '');
+INSERT OR IGNORE INTO terms_acceptance(id) VALUES(1);

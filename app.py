@@ -1,5 +1,5 @@
 # برنامج تسيير الامتحانات المكتبي - تحويل Python كامل لطبقة Electron/Node مع واجهة HTML الأصلية
-import os, sys, json, time, re, base64, hashlib, platform, subprocess, shutil, gzip, hmac, uuid, zlib
+import os, sys, json, time, re, base64, hashlib, platform, subprocess, shutil, gzip, hmac, uuid, zlib, secrets, threading
 from pathlib import Path
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -154,6 +154,46 @@ def install_update(text):
     tmp=UPDATES/'current.gupd.tmp'; tmp.write_text(text.strip(),encoding='utf-8'); tmp.replace(cur)
     active_renderer(); return {'ok':True,'version':v['version']}
 
+# ---------- حماية الواجهة المحلية ----------
+SESSION_TOKEN=secrets.token_urlsafe(32)      # رمز عشوائي جديد عند كل تشغيل، يُحقن في الصفحة ويُشترط في كل /api/*
+STATE={'logged':False,'fails':0,'lock_until':0.0}; STATE_LOCK=threading.Lock()
+OPEN_GET={'/api/session','/api/load','/api/licstatus','/api/device','/api/updinfo','/api/kvget'}   # مسموحة قبل الدخول (load يعيد {} قبل الدخول)
+OPEN_POST={'/api/login','/api/firstsetup','/api/recover','/api/save','/api/kvset','/api/kvremove'}   # الثلاثة الأخيرة تُتجاهل قبل الدخول
+MAX_BODY=64*1024*1024
+CSP="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob: data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+def _locked_secs():
+    return max(0,int(STATE['lock_until']-time.time())+1) if time.time()<STATE['lock_until'] else 0
+def _fail():
+    STATE['fails']+=1
+    if STATE['fails']>=5: STATE['lock_until']=time.time()+min(900,30*2**(STATE['fails']-5))
+def auth_login(c,u,p):
+    with STATE_LOCK:
+        if store.is_first_run(c):return {'ok':False,'firstRun':True}
+        l=_locked_secs()
+        if l:return {'ok':False,'locked':l}
+        user_ok=hmac.compare_digest(str(u).encode('utf-8'),store.get_user(c).encode('utf-8')); pw_ok=store.check_password(c,p)
+        if user_ok and pw_ok:
+            STATE['fails']=0; STATE['logged']=True; return {'ok':True}
+        _fail(); return {'ok':False,'locked':_locked_secs()}
+def auth_firstsetup(c,u,p):
+    with STATE_LOCK:
+        if not store.is_first_run(c):return {'ok':False,'error':'تم إعداد الحساب مسبقاً'}
+        u=str(u).strip()
+        if not 3<=len(u)<=40:return {'ok':False,'error':'اسم المستخدم من 3 إلى 40 حرفاً'}
+        err=store.password_policy(str(p),u)
+        if err:return {'ok':False,'error':err}
+        code=store.first_setup(c,u,str(p)); STATE['logged']=True; STATE['fails']=0; return {'ok':True,'recovery':code}
+def auth_recover(c,code,p):
+    with STATE_LOCK:
+        l=_locked_secs()
+        if l:return {'ok':False,'locked':l}
+        if not store.check_recovery(c,code):
+            _fail(); return {'ok':False,'locked':_locked_secs(),'error':'رمز الاسترجاع غير صحيح'}
+        err=store.password_policy(str(p),store.get_user(c))
+        if err:return {'ok':False,'error':err}
+        store.set_password(c,str(p)); new=store.new_recovery_code(c); STATE['fails']=0; STATE['logged']=True
+        return {'ok':True,'recovery':new}
+
 PDF_HOOK=None     # دالة (html, orientation) -> bytes تُنشئ PDF في خيط الواجهة وتنتظر النتيجة
 PRINT_HOOK=None   # يُضبط عند تشغيل النافذة: دالة تستقبل 'portrait' أو 'landscape' وتطلق الطباعة في خيط الواجهة
 MIME={'.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.ico':'image/x-icon','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf'}
@@ -162,7 +202,8 @@ def ctype(name):return MIME.get(Path(name).suffix.lower(),'application/octet-str
 # حقن طبقة التخزين (SQLite عبر الخادم المحلي) ودالة الطباعة في الواجهة
 SHIM_JS=r'''<script>
 (function(){
-function req(path,body,headers){headers=headers||{};var x=new XMLHttpRequest();x.open(body===undefined?'GET':'POST','/api/'+path,false);x.setRequestHeader('Content-Type','application/json');for(var k in headers)x.setRequestHeader(k,headers[k]);x.send(body===undefined?null:JSON.stringify(body));if(x.status>=400)throw Error(x.responseText);return JSON.parse(x.responseText)}
+var T='__TOKEN__';
+function req(path,body,headers){headers=headers||{};var x=new XMLHttpRequest();x.open(body===undefined?'GET':'POST','/api/'+path,false);x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('X-Guard-Token',T);for(var k in headers)x.setRequestHeader(k,headers[k]);x.send(body===undefined?null:JSON.stringify(body));if(x.status>=400)throw Error(x.responseText);return JSON.parse(x.responseText)}
 var g={};
 g.load=function(){return req('load').value};
 g.save=function(v){return req('save',v)};
@@ -170,40 +211,58 @@ g.flush=function(){};
 g.kvGet=function(k){return req('kvget',undefined,{'X-KV-Key':k}).value};
 g.kvSet=function(k,v){return req('kvset',{k:k,v:v}).value};
 g.kvRemove=function(k){return req('kvremove',{k:k}).value};
+g.token=T;
 g.checkPassword=function(p){return req('checkpw',undefined,{'X-Password':encodeURIComponent(p)}).value};
+g.session=function(){return req('session')};
+g.login=function(u,p){return req('login',{u:u,p:p})};
+g.firstSetup=function(u,p){return req('firstsetup',{u:u,p:p})};
+g.recover=function(c,p){return req('recover',{code:c,p:p})};
+g.logout=function(){return req('logout',{})};
 g.setPassword=function(p){return req('setpw',{p:p}).value};
 g.deviceId=function(){return req('device').value};
 g.licStatus=function(){return req('licstatus')};
 g.licActivate=function(c){return req('activate',{code:c})};
 g.updInfo=function(){return req('updinfo')};
+g.termsStatus=function(){return req('termsget')};
+g.termsAccept=function(v,u){return req('termsaccept',{version:v,user:u})};
 g.updPick=function(){return new Promise(function(resolve){var i=document.createElement('input');i.type='file';i.accept='.gupd';i.onchange=async function(){if(!i.files.length)return resolve({cancelled:true});try{var t=await i.files[0].text();resolve(req('install_update',{text:t}))}catch(e){resolve({ok:false,error:'تعذّر قراءة الملف'})}};i.click()})};
 g.updRestart=function(){location.reload()};
 window.guardDB=g;
 /* window.print لا يعمل داخل QtWebEngine: نحوّل الطلب إلى التطبيق (نافذة الطباعة / معاينة PDF) */
 window.print=function(){
   var s=document.getElementById('dynamicPrintStyle'),m=s&&/size:\s*A4\s+(landscape|portrait)/.exec(s.textContent||'');
-  try{var x=new XMLHttpRequest();x.open('POST','/api/print',true);x.setRequestHeader('Content-Type','application/json');x.send(JSON.stringify({orientation:m?m[1]:'portrait'}))}catch(e){}
+  try{var x=new XMLHttpRequest();x.open('POST','/api/print',true);x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('X-Guard-Token',T);x.send(JSON.stringify({orientation:m?m[1]:'portrait'}))}catch(e){}
 };
 })();
 </script>'''
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
+    def host_ok(self):return self.headers.get('Host','') in (f'127.0.0.1:{PORT}',f'localhost:{PORT}')   # ضد DNS-rebinding
+    def token_ok(self):return hmac.compare_digest(self.headers.get('X-Guard-Token','').encode('utf-8','replace'),SESSION_TOKEN.encode())
     def reply(self,obj,status=200):
-        raw=json.dumps(obj,ensure_ascii=False).encode('utf-8'); self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Access-Control-Allow-Origin',f'http://127.0.0.1:{PORT}'); self.send_header('Content-Length',str(len(raw))); self.end_headers(); self.wfile.write(raw)
+        raw=json.dumps(obj,ensure_ascii=False).encode('utf-8'); self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Access-Control-Allow-Origin',f'http://127.0.0.1:{PORT}'); self.send_header('Cache-Control','no-store'); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Content-Length',str(len(raw))); self.end_headers(); self.wfile.write(raw)
     def body(self):
-        try:return json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))) or b'{}')
+        try:
+            n=int(self.headers.get('Content-Length','0'))
+            if n<0 or n>MAX_BODY:return {}
+            return json.loads(self.rfile.read(n) or b'{}')
         except Exception:return {}
-    def do_OPTIONS(self):self.send_response(204); self.send_header('Access-Control-Allow-Origin',f'http://127.0.0.1:{PORT}'); self.send_header('Access-Control-Allow-Headers','Content-Type,X-KV-Key,X-Password'); self.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS'); self.end_headers()
+    def do_OPTIONS(self):self.send_response(204); self.send_header('Access-Control-Allow-Origin',f'http://127.0.0.1:{PORT}'); self.send_header('Access-Control-Allow-Headers','Content-Type,X-KV-Key,X-Password,X-Guard-Token'); self.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS'); self.end_headers()
     def do_GET(self):
         p=urlparse(self.path).path
+        if not self.host_ok():self.send_error(403);return
         if p.startswith('/api/'):
+            if not self.token_ok():self.reply({'error':'مرفوض'},403);return
+            if not STATE['logged'] and p not in OPEN_GET:self.reply({'error':'يلزم تسجيل الدخول'},401);return
             c=store.connect(DBFILE)
             try:
-                if p=='/api/load':self.reply({'value':json.dumps(store.load_all(c),ensure_ascii=False)})
+                if p=='/api/session':self.reply({'logged':STATE['logged'],'firstRun':store.is_first_run(c)})
+                elif p=='/api/load':self.reply({'value':json.dumps(store.load_all(c),ensure_ascii=False) if STATE['logged'] else '{}'})
                 elif p=='/api/device':self.reply({'value':device_id()})
                 elif p=='/api/licstatus':self.reply(lic_status(c))
                 elif p=='/api/updinfo':self.reply({'version':renderer_version,'shell':shell_version})
+                elif p=='/api/termsget':self.reply(store.get_terms(c))
                 elif p=='/api/mailcfg':self.reply(mail_public(mail_load()))
                 elif p=='/api/maildiag':self.reply(mail_diag())
                 elif p=='/api/kvget':
@@ -223,31 +282,47 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:self.send_error(404);return
         if rel=='index.html':
             i=data.find(b'<head>')
-            if i>=0:data=data[:i+6]+SHIM_JS.encode('utf-8')+data[i+6:]
+            if i>=0:data=data[:i+6]+SHIM_JS.replace('__TOKEN__',SESSION_TOKEN).encode('utf-8')+data[i+6:]
         self.send_bytes(data,ctype(rel))
     def send_bytes(self,data,content_type,cache=False):
         self.send_response(200); self.send_header('Content-Type',content_type); self.send_header('Content-Length',str(len(data)))
+        self.send_header('Content-Security-Policy',CSP); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer')
         self.send_header('Cache-Control','max-age=86400' if cache else 'no-store'); self.end_headers(); self.wfile.write(data)
     def do_POST(self):
         o=self.headers.get('Origin')
         if o and urlparse(o).hostname not in ('127.0.0.1','localhost'):self.reply({'error':'مرفوض'},403);return
-        p=urlparse(self.path).path; body=self.body(); c=store.connect(DBFILE)
+        p=urlparse(self.path).path
+        if not self.host_ok() or not self.token_ok():self.reply({'error':'مرفوض'},403);return
+        if not STATE['logged'] and p not in OPEN_POST:self.reply({'error':'يلزم تسجيل الدخول'},401);return
+        body=self.body(); c=store.connect(DBFILE)
         try:
-            if p=='/api/save':
+            if p in ('/api/save','/api/kvset','/api/kvremove') and not STATE['logged']:self.reply({'value':False})
+            elif p=='/api/login':self.reply(auth_login(c,body.get('u',''),str(body.get('p',''))))
+            elif p=='/api/firstsetup':self.reply(auth_firstsetup(c,body.get('u',''),body.get('p','')))
+            elif p=='/api/recover':self.reply(auth_recover(c,body.get('code',''),body.get('p','')))
+            elif p=='/api/logout':
+                with STATE_LOCK:STATE['logged']=False
+                self.reply({'ok':True})
+            elif p=='/api/save':
                 try:d=json.loads(body) if isinstance(body,str) else body; backup_database(c); store.save_all(c,d); self.reply({'value':True})
                 except Exception as e:self.reply({'error':'تعذر حفظ البيانات: '+str(e)},500)
             elif p=='/api/kvset':
-                if body.get('k')=='exam_local_user':store.set_user(c,str(body.get('v') or 'admin'))
+                nv=str(body.get('v') or '').strip()
+                if body.get('k')=='exam_local_user' and 3<=len(nv)<=40:store.set_user(c,nv)
                 self.reply({'value':True})
             elif p=='/api/kvremove':
-                if body.get('k')=='exam_local_user':store.reset_account(c)
                 self.reply({'value':True})
-            elif p=='/api/setpw':store.set_password(c,str(body.get('p',''))); self.reply({'value':True})
+            elif p=='/api/setpw':
+                pw=str(body.get('p','')); err=store.password_policy(pw,store.get_user(c))
+                if err:self.reply({'error':err},400)
+                else:store.set_password(c,pw); self.reply({'value':True})
             elif p=='/api/activate':
                 code=re.sub(r'\s+','',str(body.get('code',''))); st=verify_code(code)
                 if st.get('ok') and st.get('state') in ('trial','full'):
                     c.execute("UPDATE license SET device_id=?,code=?,activated=1,activation_code=?,activated_at=datetime('now') WHERE id=1",(device_id(),code,code));c.commit();self.reply({'ok':True,**lic_status(c)})
                 else:self.reply({'ok':False,'error':st.get('error','انتهت صلاحية هذا الكود')})
+            elif p=='/api/termsaccept':
+                store.accept_terms(c,str(body.get('version',''))[:20],str(body.get('user',''))[:100],device_id()); self.reply({'ok':True})
             elif p=='/api/mailcfg':self.reply(mail_public(mail_save(body)))
             elif p=='/api/sendmail':self.reply(mail_send(body))
             elif p=='/api/openurl':

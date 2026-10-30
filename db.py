@@ -17,6 +17,9 @@ def _migrate(c):
  if 'gender' not in acols: c.execute("ALTER TABLE assignments ADD COLUMN gender TEXT DEFAULT ''")
  if 'shared' not in acols: c.execute("ALTER TABLE assignments ADD COLUMN shared INTEGER DEFAULT 0")
  if 'shared_same_time' not in acols: c.execute("ALTER TABLE assignments ADD COLUMN shared_same_time INTEGER DEFAULT 0")
+ ucols={r[1] for r in c.execute('PRAGMA table_info(app_user)').fetchall()}
+ for name in ('recovery_hash','recovery_salt'):
+  if name not in ucols: c.execute("ALTER TABLE app_user ADD COLUMN "+name+" TEXT NOT NULL DEFAULT ''")
  # المادة الثانية المشتركة في حجز الحصة
  bcols={r[1] for r in c.execute('PRAGMA table_info(exam_bookings)').fetchall()}
  if 'subject2_id' not in bcols: c.execute("ALTER TABLE exam_bookings ADD COLUMN subject2_id TEXT")
@@ -81,7 +84,37 @@ def set_password(c,pw):
  salt=secrets.token_hex(16); hashed=hashlib.scrypt(pw.encode(),salt=salt.encode(),n=16384,r=8,p=1,dklen=32).hex(); c.execute('UPDATE app_user SET password_hash=?,password_salt=? WHERE id=1',(hashed,salt)); c.commit()
 def check_password(c,pw):
  r=c.execute('SELECT password_hash,password_salt FROM app_user WHERE id=1').fetchone()
- if not r['password_hash']: return pw=='admin123'
+ if not r['password_hash']: return False
  try: return hmac.compare_digest(hashlib.scrypt(pw.encode(),salt=r['password_salt'].encode(),n=16384,r=8,p=1,dklen=32).hex(),r['password_hash'])
  except Exception:return False
-def reset_account(c): c.execute("UPDATE app_user SET username='admin',password_hash='',password_salt='' WHERE id=1"); c.commit()
+def reset_account(c): pass  # أُلغيت «استعادة القيم الأولية»: الاسترجاع يتم برمز الاسترجاع فقط
+def get_terms(c):
+ r=c.execute('SELECT version,accepted_at,username FROM terms_acceptance WHERE id=1').fetchone()
+ return {'version':r['version'] or '','acceptedAt':r['accepted_at'] or '','user':r['username'] or ''}
+def accept_terms(c,version,user,device):
+ c.execute("UPDATE terms_acceptance SET version=?,accepted_at=datetime('now','localtime'),username=?,device_id=? WHERE id=1",(version,user,device)); c.commit()
+
+COMMON_PW={'password','123456789','1234567890','0123456789','qwertyuiop','azertyuiop','motdepasse','admin12345','administrator','azerty1234','abcdefghij','1q2w3e4r5t'}
+def is_first_run(c): return not c.execute('SELECT password_hash FROM app_user WHERE id=1').fetchone()['password_hash']
+def password_policy(pw,user=''):
+ """يعيد نص الخطأ أو '' إن كانت كلمة المرور مقبولة."""
+ if len(pw)<10: return 'كلمة المرور قصيرة: 10 أحرف على الأقل'
+ if len(pw)>128: return 'كلمة المرور طويلة جداً'
+ if pw.lower() in COMMON_PW or (user and pw.lower()==user.lower()) or len(set(pw))<4: return 'كلمة المرور سهلة التخمين، اختر كلمة أقوى'
+ classes=sum([any(ch.islower() for ch in pw),any(ch.isupper() for ch in pw),any(ch.isdigit() for ch in pw),any(not ch.isalnum() for ch in pw)])
+ if classes<2: return 'اجمع في كلمة المرور بين حروف وأرقام أو رموز'
+ return ''
+def _h(secret,salt): return hashlib.scrypt(secret.encode(),salt=salt.encode(),n=16384,r=8,p=1,dklen=32).hex()
+def _norm_code(code): return ''.join(ch for ch in str(code or '').upper() if ch.isalnum())
+def new_recovery_code(c):
+ """ينشئ رمز استرجاع جديداً (80 بت) ويحفظ بصمته فقط؛ يُعرض للمستخدم مرة واحدة."""
+ raw=secrets.token_hex(10).upper(); salt=secrets.token_hex(16)
+ c.execute('UPDATE app_user SET recovery_hash=?,recovery_salt=? WHERE id=1',(_h(raw,salt),salt)); c.commit()
+ return '-'.join(raw[i:i+5] for i in range(0,20,5))
+def check_recovery(c,code):
+ r=c.execute('SELECT recovery_hash,recovery_salt FROM app_user WHERE id=1').fetchone()
+ if not r['recovery_hash']: return False
+ try: return hmac.compare_digest(_h(_norm_code(code),r['recovery_salt']),r['recovery_hash'])
+ except Exception: return False
+def first_setup(c,user,pw):
+ c.execute('UPDATE app_user SET username=? WHERE id=1',(user,)); c.commit(); set_password(c,pw); return new_recovery_code(c)
