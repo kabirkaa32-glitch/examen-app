@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build output
+build/
+dist/
+installer_output/
+*.log
+
+# Local data (never commit)
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets - the PRIVATE signing key must never be in the repo
+*.pem
+*.key
+*private*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Generated at build time
+_renderer_pack.py
+fonts/
+renderer/vendor/

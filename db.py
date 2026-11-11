@@ -1,5 +1,6 @@
 """Python/SQLite port of the original Electron db.js; keeps the original schema."""
-import sqlite3, json, hashlib, secrets, hmac
+import sqlite3, json, hashlib, secrets, hmac, os, base64, zlib
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pathlib import Path
 SCHEMA=Path(__file__).with_name('schema.sql')
 SETTINGS=['schoolName','directorate','wilaya','address','schoolYear','semester','subgroupCount','printOrientation']
@@ -23,12 +24,21 @@ def _migrate(c):
  # المادة الثانية المشتركة في حجز الحصة
  bcols={r[1] for r in c.execute('PRAGMA table_info(exam_bookings)').fetchall()}
  if 'subject2_id' not in bcols: c.execute("ALTER TABLE exam_bookings ADD COLUMN subject2_id TEXT")
+ # مواد مشتركة إضافية (قائمة JSON) في حجز الحصة، ومواد إضافية لكل أستاذ (إسناد المادة إلى أستاذ)
+ if 'extra_subject_ids' not in bcols: c.execute("ALTER TABLE exam_bookings ADD COLUMN extra_subject_ids TEXT")
+ tcols={r[1] for r in c.execute('PRAGMA table_info(teachers)').fetchall()}
+ if 'extra_subject_ids' not in tcols: c.execute("ALTER TABLE teachers ADD COLUMN extra_subject_ids TEXT")
 def _extra(o, known): return json.dumps({k:v for k,v in (o or {}).items() if k not in known},ensure_ascii=False)
+def _jlist(v):
+ try:
+  x=json.loads(v) if v else []
+  return [i for i in x if i not in (None,'')] if isinstance(x,list) else []
+ except Exception: return []
 def _group(rows,key,val):
  out={}
  for r in rows: out.setdefault(str(r[key]),[]).append(r[val])
  return out
-def load_all(c):
+def _load_plain(c):
  allrows=lambda q:[dict(x) for x in c.execute(q).fetchall()]
  s=dict(c.execute('SELECT * FROM settings WHERE id=1').fetchone()); r=dict(c.execute('SELECT * FROM invigilation_rules WHERE id=1').fetchone())
  stu=_group(allrows('SELECT * FROM assignment_students'),'assignment_id','student_id'); grp=_group(allrows('SELECT * FROM assignment_groups'),'assignment_id','group_id'); dr=_group(allrows('SELECT * FROM double_room_rule_rooms'),'rule_id','room_id')
@@ -40,18 +50,18 @@ def load_all(c):
  'invigilationRules':{**json.loads(r['extra_json'] or '{}'),'guardsPerRoom':r['guards_per_room'],'reserveGuards':r['reserve_guards'],'maxPerDay':r['max_per_day'],'avoidConsecutiveDay':bool(r['avoid_consecutive_day']),'requireConsecutiveDays':bool(r['require_consecutive_days']),'balance':r['balance'],'subjectTeacherRule':r['subject_teacher_rule'],'subjectRuleExplicit':bool(r['subject_rule_explicit']),'subjectReserveCount':r['subject_reserve_count'],'balanceExtraGuards':bool(r['balance_extra_guards'])},
  'groups':[{'id':x['id'],'level':x['level'],'branch':x['branch'],'number':x['number']} for x in allrows('SELECT * FROM groups')],
  'students':[{'id':x['id'],'studentNo':x['student_no'],'last':x['last_name'],'first':x['first_name'],'groupId':e(x['group_id']),'subgroup':x['subgroup'],'birthDate':e(x.get('birth_date')),'gender':e(x.get('gender'))} for x in allrows('SELECT * FROM students')],
- 'teachers':[{'id':x['id'],'last':x['last_name'],'first':x['first_name'],'subjectId':e(x['subject_id'])} for x in allrows('SELECT * FROM teachers')],
+ 'teachers':[dict({'id':x['id'],'last':x['last_name'],'first':x['first_name'],'subjectId':e(x['subject_id'])}, **({'extraSubjectIds':_jlist(x.get('extra_subject_ids'))} if _jlist(x.get('extra_subject_ids')) else {})) for x in allrows('SELECT * FROM teachers')],
  'subjects':[{'id':x['id'],'name':x['name']} for x in allrows('SELECT * FROM subjects')],
  'rooms':[{'id':x['id'],'number':x['number'],'type':x['type'],'capacity':x['capacity'],'note':x['note']} for x in allrows('SELECT * FROM rooms')],
  'examSessions':[{'id':x['id'],'day':x['day'],'date':x['date'],'start':x['start'],'end':x['end']} for x in allrows('SELECT * FROM exam_sessions')],
- 'examBookings':[dict({'id':x['id'],'sessionId':x['session_id'],'subjectId':e(x['subject_id']),'groupId':e(x['group_id'])}, **({'subject2Id':x['subject2_id']} if x.get('subject2_id') else {})) for x in allrows('SELECT * FROM exam_bookings')],
+ 'examBookings':[dict({'id':x['id'],'sessionId':x['session_id'],'subjectId':e(x['subject_id']),'groupId':e(x['group_id'])}, **({'subject2Id':x['subject2_id']} if x.get('subject2_id') else {}), **({'extraSubjectIds':_jlist(x.get('extra_subject_ids'))} if _jlist(x.get('extra_subject_ids')) else {})) for x in allrows('SELECT * FROM exam_bookings')],
  'assignments':[dict({'id':x['id'],'groupId':e(x['group_id']),'roomId':e(x['room_id']),'sub':x['sub'],'count':x['count'],'studentIds':stu.get(str(x['id']),[]),'manual':bool(x['manual']),'gender':e(x.get('gender'))}, **({'merged':True,'groupIds':grp.get(str(x['id']),[])} if x['merged'] else {}), **({'sharedRoom':True} if x.get('shared') else {}), **({'sharedRoomSameTime':True} if x.get('shared_same_time') else {})) for x in allrows('SELECT * FROM assignments')],
  'absences':[{'id':x['id'],'date':x['date'],'time':x['time'],'subjectId':e(x['subject_id']),'groupId':e(x['group_id']),'studentId':e(x['student_id']),'justified':x['justified'],'reason':x['reason'],'sessionId':e(x['session_id'])} for x in allrows('SELECT * FROM absences')],
  'invigilations':[{'id':x['id'],'date':x['date'],'period':x['period'],'time':x['time'],'teacherId':e(x['teacher_id']),'roomId':e(x['room_id']),'status':x['status'],'justified':x['justified'],'note':x['note'],'sessionId':e(x['session_id']),'seat':x['seat'],'mandatory':bool(x['mandatory'])} for x in allrows('SELECT * FROM invigilations')],
  'teacherGuardAbsences':[{'id':x['id'],'sessionId':e(x['session_id']),'date':x['date'],'period':x['period'],'time':x['time'],'teacherId':e(x['teacher_id']),'justified':x['justified'],'note':x['note']} for x in allrows('SELECT * FROM teacher_guard_absences')],
  'doubleRoomRules':[{'id':x['id'],'sessionId':x['session_id'],'roomIds':dr.get(str(x['id']),[]),'count':x['count']} for x in allrows('SELECT * FROM double_room_rules')],
  'exclusionRules':[{'id':x['id'],'teacherId':x['teacher_id'],'date':x['date'] or '', 'start':x['start'] or '', 'end':x['end'] or '', 'allGuard':not bool(x['date'])} for x in allrows('SELECT * FROM exclusion_rules')]}
-def save_all(c,d):
+def _save_plain(c,d):
  def insert(sql, rows): c.executemany(sql,rows)
  def n(v): return None if v is None or v=='' else v
  s=d.get('settings') or {}; r=d.get('invigilationRules') or {}
@@ -63,11 +73,11 @@ def save_all(c,d):
   c.execute('UPDATE app_extras SET data=? WHERE id=1',(json.dumps({k:v for k,v in d.items() if k not in KNOWN_KEYS},ensure_ascii=False),))
   insert('INSERT OR REPLACE INTO groups VALUES (?,?,?,?)',[(x['id'],x.get('level',''),x.get('branch',''),str(x.get('number',''))) for x in d.get('groups',[])])
   insert('INSERT OR REPLACE INTO subjects VALUES (?,?)',[(x['id'],x.get('name','')) for x in d.get('subjects',[])])
-  insert('INSERT OR REPLACE INTO teachers VALUES (?,?,?,?)',[(x['id'],x.get('last',''),x.get('first',''),n(x.get('subjectId'))) for x in d.get('teachers',[])])
+  insert('INSERT OR REPLACE INTO teachers (id,last_name,first_name,subject_id,extra_subject_ids) VALUES (?,?,?,?,?)',[(x['id'],x.get('last',''),x.get('first',''),n(x.get('subjectId')),json.dumps([i for i in (x.get('extraSubjectIds') or []) if i not in (None,'')],ensure_ascii=False) if x.get('extraSubjectIds') else None) for x in d.get('teachers',[])])
   insert('INSERT OR REPLACE INTO rooms VALUES (?,?,?,?,?)',[(x['id'],str(x.get('number','')),x.get('type',''),int(x.get('capacity') or 0),x.get('note','')) for x in d.get('rooms',[])])
   insert('INSERT OR REPLACE INTO students (id,student_no,last_name,first_name,group_id,subgroup,birth_date,gender) VALUES (?,?,?,?,?,?,?,?)',[(x['id'],x.get('studentNo',''),x.get('last',''),x.get('first',''),n(x.get('groupId')),x.get('subgroup',''),x.get('birthDate',''),x.get('gender','')) for x in d.get('students',[])])
   insert('INSERT OR REPLACE INTO exam_sessions VALUES (?,?,?,?,?)',[(x['id'],x.get('day',''),x.get('date',''),x.get('start',''),x.get('end','')) for x in d.get('examSessions',[])])
-  insert('INSERT OR REPLACE INTO exam_bookings (id,session_id,subject_id,group_id,subject2_id) VALUES (?,?,?,?,?)',[(x['id'],x.get('sessionId'),n(x.get('subjectId')),n(x.get('groupId')),n(x.get('subject2Id'))) for x in d.get('examBookings',[])])
+  insert('INSERT OR REPLACE INTO exam_bookings (id,session_id,subject_id,group_id,subject2_id,extra_subject_ids) VALUES (?,?,?,?,?,?)',[(x['id'],x.get('sessionId'),n(x.get('subjectId')),n(x.get('groupId')),n(x.get('subject2Id')),json.dumps([i for i in (x.get('extraSubjectIds') or []) if i not in (None,'')],ensure_ascii=False) if x.get('extraSubjectIds') else None) for x in d.get('examBookings',[])])
   for x in d.get('assignments',[]):
    c.execute('INSERT OR REPLACE INTO assignments (id,group_id,room_id,sub,count,manual,merged,gender,shared,shared_same_time) VALUES (?,?,?,?,?,?,?,?,?,?)',(x['id'],n(x.get('groupId')),n(x.get('roomId')),x.get('sub','كامل'),x.get('count',0),int(bool(x.get('manual'))),int(bool(x.get('merged'))),x.get('gender','') or '',int(bool(x.get('sharedRoom'))),int(bool(x.get('sharedRoomSameTime')))))
    insert('INSERT OR IGNORE INTO assignment_students VALUES (?,?)',[(x['id'],i) for i in x.get('studentIds',[])])
@@ -81,7 +91,9 @@ def save_all(c,d):
 def get_user(c): return c.execute('SELECT username FROM app_user WHERE id=1').fetchone()['username'] or 'admin'
 def set_user(c,name): c.execute('UPDATE app_user SET username=? WHERE id=1',(name,)); c.commit()
 def set_password(c,pw):
- salt=secrets.token_hex(16); hashed=hashlib.scrypt(pw.encode(),salt=salt.encode(),n=16384,r=8,p=1,dklen=32).hex(); c.execute('UPDATE app_user SET password_hash=?,password_salt=? WHERE id=1',(hashed,salt)); c.commit()
+ salt=secrets.token_hex(16); hashed=hashlib.scrypt(pw.encode(),salt=salt.encode(),n=16384,r=8,p=1,dklen=32).hex(); c.execute('UPDATE app_user SET password_hash=?,password_salt=? WHERE id=1',(hashed,salt))
+ if _DEK is not None: c.execute('UPDATE enc_keys SET wrap_pw=? WHERE id=1',(_wrap(pw,'pw',_DEK),))   # تغيير كلمة المرور يعيد تغليف المفتاح فقط، فلا تُعاد كتابة البيانات
+ c.commit()
 def check_password(c,pw):
  r=c.execute('SELECT password_hash,password_salt FROM app_user WHERE id=1').fetchone()
  if not r['password_hash']: return False
@@ -109,7 +121,9 @@ def _norm_code(code): return ''.join(ch for ch in str(code or '').upper() if ch.
 def new_recovery_code(c):
  """ينشئ رمز استرجاع جديداً (80 بت) ويحفظ بصمته فقط؛ يُعرض للمستخدم مرة واحدة."""
  raw=secrets.token_hex(10).upper(); salt=secrets.token_hex(16)
- c.execute('UPDATE app_user SET recovery_hash=?,recovery_salt=? WHERE id=1',(_h(raw,salt),salt)); c.commit()
+ c.execute('UPDATE app_user SET recovery_hash=?,recovery_salt=? WHERE id=1',(_h(raw,salt),salt))
+ if _DEK is not None: c.execute('UPDATE enc_keys SET wrap_rc=? WHERE id=1',(_wrap(raw,'rc',_DEK),))
+ c.commit()
  return '-'.join(raw[i:i+5] for i in range(0,20,5))
 def check_recovery(c,code):
  r=c.execute('SELECT recovery_hash,recovery_salt FROM app_user WHERE id=1').fetchone()
@@ -117,4 +131,96 @@ def check_recovery(c,code):
  try: return hmac.compare_digest(_h(_norm_code(code),r['recovery_salt']),r['recovery_hash'])
  except Exception: return False
 def first_setup(c,user,pw):
- c.execute('UPDATE app_user SET username=? WHERE id=1',(user,)); c.commit(); set_password(c,pw); return new_recovery_code(c)
+ clear_key(); c.execute('UPDATE app_user SET username=? WHERE id=1',(user,)); c.commit(); set_password(c,pw); return init_encryption(c,pw)
+
+# ======================= تشفير البيانات (AES-256-GCM) =======================
+# - مفتاح البيانات DEK (32 بايت عشوائي) لا يُحفظ أبداً صريحاً؛ يُحفظ مغلَّفاً مرتين: بمفتاح مشتق من كلمة المرور، وبمفتاح مشتق من رمز الاسترجاع (scrypt + AES-GCM).
+# - كل بيانات البرنامج (تلاميذ، أساتذة، قاعات، حراسة، غيابات، إعدادات...) تُحفظ في كتلة واحدة مشفّرة ومضغوطة في جدول enc_data؛ الجداول العادية تبقى فارغة.
+# - المفتاح يبقى في الذاكرة فقط أثناء الجلسة ويُمسح عند تسجيل الخروج.
+_DEK=None
+PLAIN_TABLES=['assignment_students','assignment_groups','double_room_rule_rooms','assignments','absences','invigilations','teacher_guard_absences','double_room_rules','exclusion_rules','exam_bookings','exam_sessions','students','teachers','rooms','subjects','groups']
+def clear_key():
+ global _DEK; _DEK=None
+def _kek(secret,salt,label): return hashlib.scrypt((label+'|'+secret).encode('utf-8'),salt=salt,n=16384,r=8,p=1,dklen=32)
+def _wrap(secret,label,dek):
+ salt=os.urandom(16); nonce=os.urandom(12)
+ return base64.b64encode(salt+nonce+AESGCM(_kek(secret,salt,label)).encrypt(nonce,dek,b'guard-key-v1|'+label.encode())).decode()
+def _unwrap(secret,label,blob):
+ raw=base64.b64decode(blob); salt,nonce,ct=raw[:16],raw[16:28],raw[28:]
+ return AESGCM(_kek(secret,salt,label)).decrypt(nonce,ct,b'guard-key-v1|'+label.encode())
+def _enc_blob(obj):
+ raw=zlib.compress(json.dumps(obj,ensure_ascii=False).encode('utf-8'),6); nonce=os.urandom(12)
+ return base64.b64encode(nonce+AESGCM(_DEK).encrypt(nonce,raw,b'guard-data-v1')).decode()
+def _dec_blob(b):
+ raw=base64.b64decode(b)
+ return json.loads(zlib.decompress(AESGCM(_DEK).decrypt(raw[:12],raw[12:],b'guard-data-v1')).decode('utf-8'))
+def _normalize(d):
+ """يمرّر البيانات عبر المخطط نفسه (كما كان قبل التشفير) لضمان صيغة متطابقة تماماً."""
+ m=sqlite3.connect(':memory:'); m.row_factory=sqlite3.Row
+ try:
+  m.executescript(SCHEMA.read_text(encoding='utf-8')); _migrate(m); _save_plain(m,d); return _load_plain(m)
+ finally: m.close()
+def _plain_present(c):
+ for t in PLAIN_TABLES:
+  if c.execute('SELECT 1 FROM '+t+' LIMIT 1').fetchone(): return True
+ s=c.execute('SELECT school_name,directorate,wilaya,address,school_year,extra_json FROM settings WHERE id=1').fetchone()
+ if s and any((v or '') not in ('','{}') for v in tuple(s)): return True
+ e=c.execute('SELECT data FROM app_extras WHERE id=1').fetchone(); r=c.execute('SELECT extra_json FROM invigilation_rules WHERE id=1').fetchone()
+ return bool((e and (e['data'] or '{}')!='{}') or (r and (r['extra_json'] or '{}')!='{}'))
+def _wipe_plain(c):
+ """مسح البيانات غير المشفرة نهائياً (secure_delete + VACUUM + تفريغ WAL) حتى لا تبقى بقايا في الملف."""
+ c.commit(); c.execute('PRAGMA secure_delete=ON')
+ with c:
+  for t in PLAIN_TABLES: c.execute('DELETE FROM '+t)
+  c.execute('DELETE FROM settings'); c.execute('INSERT INTO settings(id) VALUES(1)')
+  c.execute('DELETE FROM invigilation_rules'); c.execute('INSERT INTO invigilation_rules(id) VALUES(1)')
+  c.execute("UPDATE app_extras SET data='{}' WHERE id=1")
+ c.execute('VACUUM'); c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+def load_all(c):
+ b=c.execute('SELECT blob FROM enc_data WHERE id=1').fetchone()['blob']
+ if b:
+  if _DEK is None: raise RuntimeError('البيانات مقفلة')
+  return _dec_blob(b)
+ return _load_plain(c)
+def save_all(c,d):
+ if _DEK is None: raise RuntimeError('البيانات مقفلة: سجّل الدخول من جديد')
+ c.execute('UPDATE enc_data SET blob=? WHERE id=1',(_enc_blob(_normalize(d)),)); c.commit()
+ if _plain_present(c): _wipe_plain(c)
+def unlock_pw(c,pw):
+ """True=فُتحت، False=فشل فكّ التشفير، None=قاعدة قديمة غير مشفرة (تحتاج ترحيلاً)."""
+ global _DEK; _DEK=None
+ w=c.execute('SELECT wrap_pw FROM enc_keys WHERE id=1').fetchone()['wrap_pw']
+ if not w: return None
+ try: _DEK=_unwrap(pw,'pw',w); return True
+ except Exception: return False
+def unlock_rc(c,code):
+ global _DEK; _DEK=None
+ w=c.execute('SELECT wrap_rc FROM enc_keys WHERE id=1').fetchone()['wrap_rc']
+ if not w: return None
+ try: _DEK=_unwrap(_norm_code(code),'rc',w); return True
+ except Exception: return False
+def init_encryption(c,pw,backups=None):
+ """ينشئ مفتاحاً جديداً ويُشفّر كل البيانات الحالية؛ يعيد رمز استرجاع جديداً (الرمز القديم يبطل)."""
+ global _DEK
+ _DEK=os.urandom(32)
+ c.execute('UPDATE enc_keys SET wrap_pw=?,wrap_rc=\'\' WHERE id=1',(_wrap(pw,'pw',_DEK),)); c.commit()
+ code=new_recovery_code(c)
+ save_all(c,_load_plain(c))
+ if backups: protect_backups(c,backups)
+ return code
+def protect_backups(c,folder):
+ """تحويل النسخ الاحتياطية القديمة (غير المشفرة) إلى مشفّرة بالمفتاح نفسه."""
+ from pathlib import Path
+ if _DEK is None or not Path(folder).exists(): return 0
+ w=c.execute('SELECT wrap_pw,wrap_rc FROM enc_keys WHERE id=1').fetchone(); n=0
+ for p in list(Path(folder).glob('guard-*.sqlite'))+list(Path(folder).glob('guard-*.db')):
+  try:
+   b=sqlite3.connect(str(p),timeout=20); b.row_factory=sqlite3.Row
+   try:
+    b.executescript(SCHEMA.read_text(encoding='utf-8')); _migrate(b); b.commit()
+    if b.execute('SELECT blob FROM enc_data WHERE id=1').fetchone()['blob'] or not _plain_present(b): continue
+    d=_load_plain(b); b.execute('UPDATE enc_keys SET wrap_pw=?,wrap_rc=? WHERE id=1',(w['wrap_pw'],w['wrap_rc'])); b.commit()
+    save_all(b,d); n+=1
+   finally: b.close()
+  except Exception: pass
+ return n

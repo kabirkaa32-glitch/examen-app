@@ -173,7 +173,11 @@ def auth_login(c,u,p):
         if l:return {'ok':False,'locked':l}
         user_ok=hmac.compare_digest(str(u).encode('utf-8'),store.get_user(c).encode('utf-8')); pw_ok=store.check_password(c,p)
         if user_ok and pw_ok:
-            STATE['fails']=0; STATE['logged']=True; return {'ok':True}
+            k=store.unlock_pw(c,p)
+            if k is False:return {'ok':False,'error':'تعذّر فكّ تشفير البيانات'}
+            res={'ok':True}
+            if k is None:res['recovery']=store.init_encryption(c,p,APP/'backups')   # ترحيل قاعدة قديمة: تشفير + رمز استرجاع جديد
+            STATE['fails']=0; STATE['logged']=True; return res
         _fail(); return {'ok':False,'locked':_locked_secs()}
 def auth_firstsetup(c,u,p):
     with STATE_LOCK:
@@ -191,7 +195,11 @@ def auth_recover(c,code,p):
             _fail(); return {'ok':False,'locked':_locked_secs(),'error':'رمز الاسترجاع غير صحيح'}
         err=store.password_policy(str(p),store.get_user(c))
         if err:return {'ok':False,'error':err}
-        store.set_password(c,str(p)); new=store.new_recovery_code(c); STATE['fails']=0; STATE['logged']=True
+        k=store.unlock_rc(c,code)
+        if k is False:return {'ok':False,'error':'تعذّر فكّ تشفير البيانات برمز الاسترجاع'}
+        store.set_password(c,str(p))
+        new=store.new_recovery_code(c) if k else store.init_encryption(c,str(p),APP/'backups')
+        STATE['fails']=0; STATE['logged']=True
         return {'ok':True,'recovery':new}
 
 PDF_HOOK=None     # دالة (html, orientation) -> bytes تُنشئ PDF في خيط الواجهة وتنتظر النتيجة
@@ -301,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
             elif p=='/api/firstsetup':self.reply(auth_firstsetup(c,body.get('u',''),body.get('p','')))
             elif p=='/api/recover':self.reply(auth_recover(c,body.get('code',''),body.get('p','')))
             elif p=='/api/logout':
-                with STATE_LOCK:STATE['logged']=False
+                with STATE_LOCK:STATE['logged']=False; store.clear_key()
                 self.reply({'ok':True})
             elif p=='/api/save':
                 try:d=json.loads(body) if isinstance(body,str) else body; backup_database(c); store.save_all(c,d); self.reply({'value':True})

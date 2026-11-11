@@ -29,3 +29,8 @@ INSERT OR IGNORE INTO app_extras(id) VALUES(1);
 -- موافقة المستخدم على شروط الاستخدام والخصوصية والأمان (تُعرض بعد تسجيل الدخول)
 CREATE TABLE IF NOT EXISTS terms_acceptance (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL DEFAULT '', accepted_at TEXT, username TEXT NOT NULL DEFAULT '', device_id TEXT NOT NULL DEFAULT '');
 INSERT OR IGNORE INTO terms_acceptance(id) VALUES(1);
+-- تشفير البيانات: المفتاح العشوائي (DEK) مغلَّف بكلمة المرور وبرمز الاسترجاع، والبيانات كلها في كتلة واحدة مشفّرة (AES-256-GCM)
+CREATE TABLE IF NOT EXISTS enc_keys (id INTEGER PRIMARY KEY CHECK(id=1), wrap_pw TEXT NOT NULL DEFAULT '', wrap_rc TEXT NOT NULL DEFAULT '');
+INSERT OR IGNORE INTO enc_keys(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS enc_data (id INTEGER PRIMARY KEY CHECK(id=1), blob TEXT NOT NULL DEFAULT '');
+INSERT OR IGNORE INTO enc_data(id) VALUES(1);
